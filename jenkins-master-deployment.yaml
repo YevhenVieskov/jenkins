@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jenkins-master
+  namespace: default
 spec:
   replicas: 1
   selector:
@@ -15,6 +16,8 @@ spec:
         app: jenkins-master
     spec:
       serviceAccountName: default
+      securityContext:
+        fsGroup: 1000        
       containers:
         - name: jenkins
           image: vieskov1980/jenkins-master:1.0
@@ -33,7 +36,11 @@ spec:
               containerPort: 50000
           volumeMounts:
             - name: jenkins-home
-              mountPath: /var/jenkins_home
+              mountPath: "/var/jenkins_home"
       volumes:
-        - name: jenkins-home
-          emptyDir: {}
+        #- name: jenkins-home
+          #emptyDir: {}
+      - name: jenkins-home
+        persistentVolumeClaim:
+          claimName: pvc-jenkins-home
+      restartPolicy: Always  
