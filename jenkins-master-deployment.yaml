@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jenkins-master
-  namespace: default
+  namespace: jenkins
 spec:
   replicas: 1
   selector:
@@ -16,7 +16,8 @@ spec:
         app: jenkins-master
     spec:
       serviceAccountName: default
-      securityContext:
+      securityContext: # Set runAsUser to 1000 to let Jenkins run as non-root user 'jenkins' which exists in 'jenkins/jenkins'
+        runAsUser: 0
         fsGroup: 1000        
       containers:
         - name: jenkins

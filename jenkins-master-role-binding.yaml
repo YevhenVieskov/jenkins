@@ -5,7 +5,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: default
-    namespace: default
+    namespace: jenkins
 roleRef:
   kind: ClusterRole
   name: service-reader

@@ -9,7 +9,7 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: jenkins-home
-  #namespace: jenkins
+  namespace: jenkins
   labels:
     type: local
 spec:
@@ -18,16 +18,17 @@ spec:
     - ReadWriteOnce
   capacity:
     storage: 20Gi
+  persistentVolumeReclaimPolicy: Retain  
   hostPath:
     path: "/data/jenkins_home"
     #type: DirectoryOrCreate
 
-#---
+---
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
   name: pvc-jenkins-home
-  namespace: default
+  namespace: jenkins
 spec:
   accessModes:
     - ReadWriteOnce
