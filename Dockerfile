@@ -18,6 +18,12 @@ RUN /usr/local/bin/install-plugins.sh github
 #Pipeline for creating pipeline jobs
 RUN /usr/local/bin/install-plugins.sh workflow-aggregator
 
+#Metrics plugin for Jenkins
+RUN /usr/local/bin/install-plugins.sh metrics
+
+#Jenkins Prometheus Plugin expose an endpoint (default /prometheus) with metrics where a Prometheus Server can scrape.
+RUN /usr/local/bin/install-plugins.sh prometheus:2.0.10
+
 #Groovy post-init script
 COPY init.groovy /usr/share/jenkins/ref/init.groovy.d/init.groovy
 
