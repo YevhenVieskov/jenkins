@@ -1,0 +1,24 @@
+
+
+apiVersion: maps.k8s.elastic.co/v1alpha1
+kind: ElasticMapsServer
+metadata:
+  name: quickstart
+spec:
+  version: 7.16.2
+  podTemplate:
+    spec:
+      containers:
+      - name: maps
+        env:
+          - name: NODE_OPTIONS
+            value: "--max-old-space-size=980"
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 1
+          limits:
+            memory: 1Gi
+            cpu: 1
+
+

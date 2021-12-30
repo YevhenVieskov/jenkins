@@ -1,0 +1,22 @@
+
+
+apiVersion: apm.k8s.elastic.co/v1
+kind: ApmServer
+metadata:
+  name: quickstart
+spec:
+  version: 7.16.2
+  podTemplate:
+    spec:
+      containers:
+      - name: apm-server
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 0.5
+          limits:
+            memory: 2Gi
+            cpu: 2
+
+
+
