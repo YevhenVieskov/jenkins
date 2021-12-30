@@ -22,7 +22,7 @@ Minikube configured for hostPath sets the permissions on /data to the root accou
 
    `exit`
 
-
+kubectl exec --stdin --tty prometheus-deployment-599bbd9457-ngw8d -n monitoring  -- /bin/sh
 
 ## Links
 
