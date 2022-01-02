@@ -622,6 +622,313 @@ image 3
 You should see the dashboard immediately.
 
 
+## Deploy ECK in your Kubernetes cluster
+
+
+
+    Install custom resource definitions and the operator with its RBAC rules:
+
+    kubectl create -f https://download.elastic.co/downloads/eck/1.9.1/crds.yaml
+    kubectl apply -f https://download.elastic.co/downloads/eck/1.9.1/operator.yaml
+
+    If you are running a version of Kubernetes before 1.16 you have to use the legacy version of the manifests:
+
+    kubectl create -f https://download.elastic.co/downloads/eck/1.9.1/crds-legacy.yaml
+    kubectl apply -f https://download.elastic.co/downloads/eck/1.9.1/operator-legacy.yaml
+
+    Monitor the operator logs:
+
+    kubectl -n elastic-system logs -f statefulset.apps/elastic-operator
+
+## Deploy an Elasticsearch cluster
+
+Apply a simple Elasticsearch cluster specification, with one Elasticsearch node:
+
+If your Kubernetes cluster does not have any Kubernetes nodes with at least 2GiB of free memory, the pod will be stuck in Pending state. See Manage compute resources for more information about resource requirements and how to configure them.
+
+cat <<EOF | kubectl apply -f -
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata:
+  name: quickstart
+spec:
+  version: 7.16.2
+  nodeSets:
+  - name: default
+    count: 1
+    config:
+      node.store.allow_mmap: false
+EOF
+
+The operator automatically creates and manages Kubernetes resources to achieve the desired state of the Elasticsearch cluster. It may take up to a few minutes until all the resources are created and the cluster is ready for use.
+
+Setting node.store.allow_mmap: false has performance implications and should be tuned for production workloads as described in the Virtual memory section.
+Monitor cluster health and creation progress
+edit
+
+Get an overview of the current Elasticsearch clusters in the Kubernetes cluster, including health, version and number of nodes:
+
+kubectl get elasticsearch
+
+NAME          HEALTH    NODES     VERSION   PHASE         AGE
+quickstart    green     1         7.16.2     Ready         1m
+
+When you create the cluster, there is no HEALTH status and the PHASE is empty. After a while, the PHASE turns into Ready, and HEALTH becomes green. The HEALTH status comes from Elasticsearch’s cluster health API.
+
+You can see that one Pod is in the process of being started:
+
+kubectl get pods --selector='elasticsearch.k8s.elastic.co/cluster-name=quickstart'
+
+NAME                      READY   STATUS    RESTARTS   AGE
+quickstart-es-default-0   1/1     Running   0          79s
+
+Access the logs for that Pod:
+
+kubectl logs -f quickstart-es-default-0
+
+Request Elasticsearch access
+edit
+
+A ClusterIP Service is automatically created for your cluster:
+
+kubectl get service quickstart-es-http
+
+NAME                 TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+quickstart-es-http   ClusterIP   10.15.251.145   <none>        9200/TCP   34m
+
+    Get the credentials.
+
+    A default user named elastic is automatically created with the password stored in a Kubernetes secret:
+
+    PASSWORD=$(kubectl get secret quickstart-es-elastic-user -o go-template='{{.data.elastic | base64decode}}')
+
+    Request the Elasticsearch endpoint.
+
+    From inside the Kubernetes cluster:
+
+    curl -u "elastic:$PASSWORD" -k "https://quickstart-es-http:9200"
+
+    From your local workstation, use the following command in a separate terminal:
+
+    kubectl port-forward service/quickstart-es-http 9200
+
+    Then request localhost:
+
+    curl -u "elastic:$PASSWORD" -k "https://localhost:9200"
+
+Disabling certificate verification using the -k flag is not recommended and should be used for testing purposes only. See: Setup your own certificate
+
+{
+  "name" : "quickstart-es-default-0",
+  "cluster_name" : "quickstart",
+  "cluster_uuid" : "XqWg0xIiRmmEBg4NMhnYPg",
+  "version" : {...},
+  "tagline" : "You Know, for Search"
+}
+
+
+## Deploy a Kibana Instance
+
+To deploy your Kibana instance go through the following steps.
+
+    Specify a Kibana instance and associate it with your Elasticsearch cluster:
+
+    cat <<EOF | kubectl apply -f -
+    apiVersion: kibana.k8s.elastic.co/v1
+    kind: Kibana
+    metadata:
+      name: quickstart
+    spec:
+      version: 7.16.2
+      count: 1
+      elasticsearchRef:
+        name: quickstart
+    EOF
+
+    Monitor Kibana health and creation progress.
+
+    Similar to Elasticsearch, you can retrieve details about Kibana instances:
+
+    kubectl get kibana
+
+    And the associated Pods:
+
+    kubectl get pod --selector='kibana.k8s.elastic.co/name=quickstart'
+
+    Access Kibana.
+
+    A ClusterIP Service is automatically created for Kibana:
+
+    kubectl get service quickstart-kb-http
+
+    Use kubectl port-forward to access Kibana from your local workstation:
+
+    kubectl port-forward service/quickstart-kb-http 5601
+
+    Open https://localhost:5601 in your browser. Your browser will show a warning because the self-signed certificate configured by default is not verified by a known certificate authority and not trusted by your browser. You can temporarily acknowledge the warning for the purposes of this quick start but it is highly recommended that you configure valid certificates for any production deployments.
+
+    Login as the elastic user. The password can be obtained with the following command:
+
+    kubectl get secret quickstart-es-elastic-user -o=jsonpath='{.data.elastic}' | base64 --decode; echo
+
+## Run Metricbeat on Kubernetes
+
+Kubernetes deploy manifests
+edit
+
+You deploy Metricbeat as a DaemonSet to ensure that there’s a running instance on each node of the cluster. These instances are used to retrieve most metrics from the host, such as system metrics, Docker stats, and metrics from all the services running on top of Kubernetes.
+
+In addition, one of the Pods in the DaemonSet will constantly hold a leader lock which makes it responsible for handling cluster-wide monitoring. This instance is used to retrieve metrics that are unique for the whole cluster, such as Kubernetes events or kube-state-metrics. You can find more information about leader election configuration options at Autodiscover.
+
+Note: If you are upgrading from older versions, please make sure there are no redundant parts as left-overs from the old manifests. Deployment specification and its ConfigMaps might be the case.
+
+Everything is deployed under the kube-system namespace by default. To change the namespace, modify the manifest file.
+
+To download the manifest file, run:
+
+curl -L -O https://raw.githubusercontent.com/elastic/beats/7.16/deploy/kubernetes/metricbeat-kubernetes.yaml
+
+If you are using Kubernetes 1.7 or earlier: Metricbeat uses a hostPath volume to persist internal data. It’s located under /var/lib/metricbeat-data. The manifest uses folder autocreation (DirectoryOrCreate), which was introduced in Kubernetes 1.8. You need to remove type: DirectoryOrCreate from the manifest and create the host folder yourself.
+Settings
+edit
+
+By default, Metricbeat sends events to an existing Elasticsearch deployment, if present. To specify a different destination, change the following parameters in the manifest file:
+
+- name: ELASTICSEARCH_HOST
+  value: elasticsearch
+- name: ELASTICSEARCH_PORT
+  value: "9200"
+- name: ELASTICSEARCH_USERNAME
+  value: elastic
+- name: ELASTICSEARCH_PASSWORD
+  value: changeme
+
+Red Hat OpenShift configuration
+edit
+
+If you are using Red Hat OpenShift, you need to specify additional settings in the manifest file and enable the container to run as privileged.
+
+    Modify the DaemonSet container spec in the manifest file:
+
+      securityContext:
+        runAsUser: 0
+        privileged: true
+
+    In the manifest file, edit the metricbeat-daemonset-modules ConfigMap, and specify the following settings under kubernetes.yml in the data section:
+
+      kubernetes.yml: |-
+        - module: kubernetes
+          metricsets:
+            - node
+            - system
+            - pod
+            - container
+            - volume
+          period: 10s
+          host: ${NODE_NAME}
+          hosts: ["https://${NODE_NAME}:10250"]
+          bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+          ssl.certificate_authorities:
+            - /path/to/kubelet-service-ca.crt
+
+    kubelet-service-ca.crt can be any CA bundle that contains the issuer of the certificate used in the Kubelet API. According to each specific installation of Openshift this can be found either in secrets or in configmaps. In some installations it can be available as part of the service account secret, in /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt. In case of using Openshift installer for GCP then the following configmap can be mounted in Metricbeat Pod and use ca-bundle.crt in ssl.certificate_authorities:
+
+    Name:         kubelet-serving-ca
+    Namespace:    openshift-kube-apiserver
+    Labels:       <none>
+    Annotations:  <none>
+
+    Data
+    ====
+    ca-bundle.crt:
+
+    Under the metricbeat ClusterRole, add the following resources:
+
+      - nodes/metrics
+      - nodes/stats
+
+    Grant the metricbeat service account access to the privileged SCC:
+
+    oc adm policy add-scc-to-user privileged system:serviceaccount:kube-system:metricbeat
+
+    This command enables the container to be privileged as an administrator for OpenShift.
+
+    Override the default node selector for the kube-system namespace (or your custom namespace) to allow for scheduling on any node:
+
+    oc patch namespace kube-system -p \
+    '{"metadata": {"annotations": {"openshift.io/node-selector": ""}}}'
+
+    This command sets the node selector for the project to an empty string. If you don’t run this command, the default node selector will skip master nodes.
+
+Load Kibana dashboards
+edit
+
+Metricbeat comes packaged with various pre-built Kibana dashboards that you can use to visualize metrics about your Kubernetes environment.
+
+If these dashboards are not already loaded into Kibana, you must install Metricbeat on any system that can connect to the Elastic Stack, and then run the setup command to load the dashboards. To learn how, see Load Kibana dashboards.
+
+If you are using a different output other than Elasticsearch, such as Logstash, you need to Load the index template manually and Load Kibana dashboards.
+Deploy
+edit
+
+Metricbeat gets some metrics from kube-state-metrics. If kube-state-metrics is not already running, deploy it now (see the Kubernetes deployment docs).
+
+To deploy Metricbeat to Kubernetes, run:
+
+kubectl create -f metricbeat-kubernetes.yaml
+
+To check the status, run:
+
+$ kubectl --namespace=kube-system  get ds/metricbeat
+
+NAME       DESIRED   CURRENT   READY     UP-TO-DATE   AVAILABLE   NODE-SELECTOR   AGE
+metricbeat   32        32        0         32           0           <none>          1m
+
+Metrics should start flowing to Elasticsearch.
+Deploying Metricbeat to collect cluster-level metrics in large clusters
+edit
+
+The size and the number of nodes in a Kubernetes cluster can be fairly large at times, and in such cases the Pod that will be collecting cluster level metrics might face performance issues due to resources limitations. In this case users might consider to avoid using the leader election strategy and instead run a dedicated, standalone Metricbeat instance using a Deployment in addition to the DaemonSet.
+
+
+ 
+## Configure Kibana Dashboard Loading
+
+
+Metricbeat comes packaged with example Kibana dashboards, visualizations, and searches for visualizing Metricbeat data in Kibana.
+
+To load the dashboards, you can either enable dashboard loading in the setup.dashboards section of the metricbeat.yml config file, or you can run the setup command. Dashboard loading is disabled by default.
+
+When dashboard loading is enabled, Metricbeat uses the Kibana API to load the sample dashboards. Dashboard loading is only attempted when Metricbeat starts up. If Kibana is not available at startup, Metricbeat will stop with an error.
+
+To enable dashboard loading, add the following setting to the config file:
+
+setup.dashboards.enabled: true
+
+Configuration options
+edit
+
+You can specify the following options in the setup.dashboards section of the metricbeat.yml config file:
+setup.dashboards.enabled
+edit
+
+If this option is set to true, Metricbeat loads the sample Kibana dashboards from the local kibana directory in the home path of the Metricbeat installation.
+
+When dashboard loading is enabled, Metricbeat overwrites any existing dashboards that match the names of the dashboards you are loading. This happens every time Metricbeat starts.
+
+If no other options are set, the dashboard are loaded from the local kibana directory in the home path of the Metricbeat installation. To load dashboards from a different location, you can configure one of the following options: setup.dashboards.directory, setup.dashboards.url, or setup.dashboards.file.
+
+## Configure Kibana Endpoint
+Kibana dashboards are loaded into Kibana via the Kibana API. This requires a Kibana endpoint configuration. For details on authenticating to the Kibana API, see Authentication.
+
+You configure the endpoint in the setup.kibana section of the metricbeat.yml config file.
+
+Here is an example configuration:
+
+setup.kibana.host: "https://localhost:5601"
+
+
+
 
 
 ######################################
@@ -653,3 +960,15 @@ Login to Grafana, and add Dashboard with ID: 9964
 10. [How To Gather Infrastructure Metrics with Metricbeat on Ubuntu 18.04] (https://www.stackovercloud.com/2019/03/15/how-to-gather-infrastructure-metrics-with-metricbeat-on-ubuntu-18-04/)
 
 11. [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376)
+
+12. Deploy ECK in your Kubernetes cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html
+
+
+13. Deploy an Elasticsearch cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-elasticsearch.html
+
+14. Deploy a Kibana instance https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-kibana.html
+
+15. Run Metricbeat on Kubernetes https://www.elastic.co/guide/en/beats/metricbeat/current/running-on-kubernetes.html#running-on-kubernetes
+
+16. Configure Kibana dasboard loading https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
+17.  Configure Kibana Endpoint https://www.elastic.co/guide/en/beats/metricbeat/current/setup-kibana-endpoint.html
