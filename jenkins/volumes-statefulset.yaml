@@ -1,0 +1,135 @@
+#https://coderedirect.com/questions/378916/add-persistent-volume-in-kubernetes-statefulset-on-minikube
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: example-pv
+spec:
+  capacity:
+    storage: 100Gi
+  # volumeMode field requires BlockVolume Alpha feature gate to be enabled.
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: local-storage
+  local:
+    path: /directory/on/host
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - minikube 
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: example-local-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: local-storage
+---
+apiVersion: "apps/v1beta1"
+kind: StatefulSet
+metadata:
+  name: nginx
+spec:
+  serviceName: nginx
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx-container 
+          image: "nginx:1.12.2"
+          imagePullPolicy: "IfNotPresent"
+          volumeMounts: 
+            - name: localvolume
+              mountPath: /var/www/html
+      volumes:
+        - name: localvolume
+          persistentVolumeClaim:
+            claimName: example-local-claim
+
+######################################################
+
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: models-1-0-0
+  labels:
+    name: models-1-0-0
+spec:
+  capacity:
+    storage: 200Gi
+  storageClassName: standard
+  accessModes:
+    - ReadOnlyMany
+  gcePersistentDisk:
+    pdName: models-1-0-0
+    fsType: ext4
+    readOnly: true
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: models-1-0-0-claim
+spec:
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 200Gi
+  selector:
+    matchLabels:
+      name: models-1-0-0
+
+###################################
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nfs-pv
+  labels:
+    app: test  # the label has been added to make sure the bounding is working as expected
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  gcePersistentDisk:
+    pdName: gce-nfs-disk
+    fsType: ext4
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nfs-pvc
+  labels:
+    app: test
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "" # the storageClassName has to be specified
+  resources:
+    requests:
+      storage: 2Gi
+  selector:
+    matchLabels:
+      app: test

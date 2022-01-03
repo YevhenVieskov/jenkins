@@ -1,0 +1,39 @@
+#apiVersion: storage.k8s.io/v1
+#kind: StorageClass
+#metadata:
+#  name: local-hostpath-storage
+#provisioner: kubernetes.io/no-provisioner
+#volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jenkins-home
+  namespace: jenkins
+  labels:
+    type: local
+spec:
+  storageClassName: "" #local-hostpath-storage 
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 20Gi
+  persistentVolumeReclaimPolicy: Retain  
+  hostPath:
+    path: "/data/jenkins_home"
+    #type: DirectoryOrCreate
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-jenkins-home
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "" #local-hostpath-storage
+  volumeName: jenkins-home
+  resources:
+    requests:
+      storage: 10Gi

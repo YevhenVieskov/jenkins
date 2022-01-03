@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins-master
+  namespace: jenkins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jenkins-master
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: jenkins-master
+    spec:
+      serviceAccountName: default
+      securityContext: # Set runAsUser to 1000 to let Jenkins run as non-root user 'jenkins' which exists in 'jenkins/jenkins'
+        runAsUser: 0
+        fsGroup: 1000        
+      containers:
+        - name: jenkins
+          image: vieskov1980/jenkins-master:1.0
+          imagePullPolicy: IfNotPresent #Never
+          env:
+            - name: JAVA_OPTS
+              value: -Djenkins.install.runSetupWizard=false
+            - name: JENKINS_MASTER_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          ports:
+            - name: http-port
+              containerPort: 8080
+            - name: jnlp-port
+              containerPort: 50000
+          volumeMounts:
+            - name: jenkins-home
+              mountPath: "/var/jenkins_home"
+      volumes:
+        #- name: jenkins-home
+          #emptyDir: {}
+      - name: jenkins-home
+        persistentVolumeClaim:
+          claimName: pvc-jenkins-home
+      restartPolicy: Always  
