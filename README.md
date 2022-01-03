@@ -58,7 +58,7 @@ j.save();
 
 What this script is doing is grabbing a number of environment variables that are available on the container, instantiating a new KubernetesCloud, formatting the variables, and assigning them to the correct properties for the kubernetes config.
 
-The only value that you will have to add to this script is on the setServerURL call. This value YOUR_MINIKUBE_HOST_URL will be the output of the following command kubectl cluster-info | grep master |cut -d “ “ -f6. In other cloud environments this URL will be static (not changing) and can be hard-coded or injected as a secret during the deployment.
+The only value that you will have to add to this script is on the setServerURL call. This value YOUR_MINIKUBE_HOST_URL will be the output of the following command kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})"  In other cloud environments this URL will be static (not changing) and can be hard-coded or injected as a secret during the deployment.
 
 cd ci-octopus && vi init.groovy and update the setServerUrl with the your value.
 
