@@ -928,6 +928,13 @@ Here is an example configuration:
 setup.kibana.host: "https://localhost:5601"
 
 
+## Jenkins and K6 Integration
+
+We started using K6 so that we could confidently automate the API integration testing scripts and also perform load test. 
+
+K6 does not output results in the JUnit XML required by Jenkins does to run tests and display them according to Jenkins metrics for continuous deployment. Hence, a groovy script is required to accept JSON results from K6 Tests, convert them into Jenkins understandable format (JUnit XML) and show metrics depending on the type of test and requirements.
+
+
 
 
 
@@ -972,3 +979,10 @@ Login to Grafana, and add Dashboard with ID: 9964
 
 16. Configure Kibana dasboard loading https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
 17.  Configure Kibana Endpoint https://www.elastic.co/guide/en/beats/metricbeat/current/setup-kibana-endpoint.html
+
+17. Load testing with Jenkins. https://k6.io/blog/integrating-load-testing-with-jenkins/
+
+18. Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03
+
+19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins
+
