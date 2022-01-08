@@ -5,31 +5,95 @@ metadata:
   namespace: logging
 data:
   logstash.yml: |
-    http.host: "0.0.0.0"
-    path.config: /usr/share/logstash/pipeline
-  logstash.conf: |
-    # all input will come from filebeat, no local logs
     input {
       beats {
-        port => 5044
+        port => "5045"
       }
     }
+    
     filter {
-      if [message] =~ /^\{.*\}$/ {
-        json {
-          source => "message"
+      if [type] == "jenkins-server" {
+      # set all messages from the jenkins log as type 'jenkins' and add the @message field.
+          mutate {
+              add_field => ["@message_type", "jenkins"]
+              add_field => ["@message", "%{message}"]
+          }
         }
       }
-      if [ClientHost] {
-        geoip {
-          source => "ClientHost"
+    # now that we have possibly-multiline events, we can clean them up.
+    filter {
+    # munge the possibly-multiline messages into a single string
+        mutate {
+          join => ["@message", "\n"]
         }
+    # split @message into __date and __msg, and overwrite the @timestamp value.
+      grok {
+          match => [ "@message", "^(?<__date>%{MONTH} %{MONTHDAY}, %{YEAR} %{TIME} (AM|PM)) (?<__msg>.+)" ]
+      }
+      date {
+          match  => [ "__date", "MMM dd, YYYY HH:mm:ss a"]
+      }
+    # ...now some patterns to categorize specific event types...
+    # parse build completion messages, adding the jenkins_* fields and the 'build' tag
+      grok {
+          match => [ "@message", "(?<jenkins_job>\S+) #(?<jenkins_build_number>\d+) (?<__msg>.+): (?<jenkins_build_status>\w+)" ]
+          tag_on_failure => []
+          overwrite => true
+          add_tag => ['build']
+      }
+       
+    # convert build number from string to integer
+      mutate {
+        convert => ["jenkins_build_number", "integer"]
+      }
+    # tag messages that come from the perforce SCM plugin (and associated classes)
+      grok {
+        match => [ "@message", "\.perforce\."]
+        tag_on_failure => []
+        add_tag => ['p4-plugin']
+      }
+    # if we have extracted a short message string, replace @message with it now
+      if [__msg] {
+        mutate {
+          replace => ["@message","%{__msg}"]
+        }
+      }
+    # convert @message back into an array of lines
+        mutate {
+          split => ["@message", "\n"]
+        }
+    }
+    # clean-up temporary fields and unwanted tags.
+    filter {
+      mutate {
+        remove_field => [
+          "message",
+          "__msg",
+          "__date",
+          "dumps1",
+          "plugin_command"
+        ]
+        remove_tag => [
+          "multiline",
+          "_grokparsefailure"
+        ]
       }
     }
+    # send it on to the elasticsearch
     output {
-        elasticsearch {
-            hosts => [ "elasticsearch-logging:9200" ]
-        }
+      elasticsearch {
+        hosts => ["10.103.5.223:9200"]
+    
+    # username & password to connect to elaticsearch
+        user => "elastic"
+        password =>  "changeme"         #"elastic"
+    
+        action => "index"
+        index => "jenkins-%{+YYYY.MM.dd}"}
+ 
+    # use this if you want to verify logs are being sent to elasticsearch or not
+ 
+    #stdout { codec => rubydebug }
     }
 ---
 apiVersion: apps/v1
@@ -39,6 +103,9 @@ metadata:
   namespace: logging
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
   template:
     metadata:
       labels:
