@@ -24,6 +24,15 @@ RUN /usr/local/bin/install-plugins.sh metrics
 #Jenkins Prometheus Plugin expose an endpoint (default /prometheus) with metrics where a Prometheus Server can scrape.
 RUN /usr/local/bin/install-plugins.sh prometheus:2.0.10
 
+#Jenkins test result aggregator https://github.com/jenkinsci/test-results-aggregator-plugin
+RUN /usr/local/bin/install-plugins.sh test-results-aggregator
+
+#Jenkins test result analizer https://github.com/jenkinsci/test-results-analizer
+RUN /usr/local/bin/install-plugins.sh test-results-analyzer:0.3.5
+
+#Jenkins logstash plugin https://github.com/jenkinsci/logstash-plugin
+RUN /usr/local/bin/install-plugins.sh logstash
+
 #Groovy post-init script
 COPY init.groovy /usr/share/jenkins/ref/init.groovy.d/init.groovy
 

@@ -986,6 +986,3 @@ Login to Grafana, and add Dashboard with ID: 9964
 
 19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins
 
-20. Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/
-    
-
