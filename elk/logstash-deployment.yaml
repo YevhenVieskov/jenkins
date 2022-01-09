@@ -5,9 +5,12 @@ metadata:
   namespace: logging
 data:
   logstash.yml: |
+    http.host: "0.0.0.0"
+    path.config: /usr/share/logstash/pipeline
+  logstash.conf: |
     input {
       beats {
-        port => "5045"
+        port => "5044"
       }
     }
     
@@ -82,7 +85,7 @@ data:
     # send it on to the elasticsearch
     output {
       elasticsearch {
-        hosts => ["10.103.5.223:9200"]
+        hosts =>   ["10.104.225.11:9200"]               #["192.168.49.2:30920"]                                   #
     
     # username & password to connect to elaticsearch
         user => "elastic"
