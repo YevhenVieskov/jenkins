@@ -1,3 +1,0 @@
-// Sample Test Group Heirarchy
-group("Inventory Tests", function () { group("Category Tests", function () {  group("Get all categories", function() {    get_all_categories();  }); });
-});
