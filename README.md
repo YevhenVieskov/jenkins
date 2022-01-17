@@ -1,11 +1,11 @@
 # Jenkins in Kubernetes monitoring with Prometheus and Graphana 
 
-## Deployment algorithm
+## Jenkins Deployment 
 
 
 https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513
 
-Prerequisites
+### Prerequisites
 
 Let’s first install kubectl via the Kubernetes website.
 
@@ -26,7 +26,8 @@ That is all fine and good, but what happens when the jenkins-master node goes do
 ```groovy
 
 import org.csanchez.jenkins.plugins.kubernetes.*
-import jenkins.model.*def JENKINS_MASTER_PORT_50000_TCP_ADDR = System.env.JENKINS_MASTER_PORT_50000_TCP_ADDR
+import jenkins.model.*
+def JENKINS_MASTER_PORT_50000_TCP_ADDR = System.env.JENKINS_MASTER_PORT_50000_TCP_ADDR
 def JENKINS_MASTER_POD_IP = System.env.JENKINS_MASTER_POD_IP
 def JENKINS_MASTER_SERVICE_PORT_HTTP = System.env.JENKINS_MASTER_SERVICE_PORT_HTTP
 def JENKINS_SLAVE_AGENT_PORT = System.env.JENKINS_SLAVE_AGENT_PORT
@@ -101,9 +102,20 @@ Before finishing the docker stuff let’s run one more command to build our imag
 
 `docker build -t jenkins-master:1.0 .`
 
-## Kubernetes Pod Deployment
+### Kubernetes Pod Deployment
 
-Lets run this command, vi jenkins-master-deployment.yaml and paste the following code into it…
+Create namespace vi `jenkins-master-deployment.yaml` and paste the following code into it.
+
+```yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jenkins
+
+```
+
+Lets run this command, vi `jenkins-master-deployment.yaml` and paste the following code into it…
 
 ```yaml
 
@@ -162,12 +174,15 @@ Most of the code above the spec object is standard. We are going to name the pod
 We add in two environment variables, one that disables the Jenkins setup wizard and will auto-setup Jenkins on container spin-up, the second is the ip of the pod once it has spun up injected as status.podIP. We expose two ports 8080 for external traffic to Jenkins and 50000 because is the default port for the jnlp-slaves communication.
 Kubernetes Service
 
-Now that we have the deployment lets create the kubernetes service with a vi jenkins-master-service.yaml pasting the following code into it...
+Now that we have the deployment lets create the kubernetes service with a `vi jenkins-master-service.yaml` pasting the following code into it...
+
+```yaml
 
 apiVersion: v1
 kind: Service
 metadata:
   name: jenkins-master
+  namespace: jenkins
 spec:
   type: NodePort
   ports:
@@ -182,15 +197,19 @@ spec:
   selector:
     app: jenkins-master
 
+```
+
 This will tell kubernetes to how to access the pod defined in our deployment. nodePort is what the service takes in traffic on and targetPort is the port exposed on the container. We open up port 8080 for incoming traffic and 50000 for communication with the jenkins-slaves instances. When we go to hit the Jenkins URL within minikube, we will use port 30000. Incoming traffic on the node flows from port 30000 to 8080 on the jenkins-master container.
 Kubernetes ClusterRole
 
-Last, but certainly not least we have to give some permissions to the default serviceAccount we added to our deployment. Let’s run the following command vi jenkins-master-role.yaml and paste the following…
+Last, but certainly not least we have to give some permissions to the default serviceAccount we added to our deployment. Let’s run the following command `vi jenkins-master-role.yaml` and paste the following…
+
+```yaml
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  namespace: default
+  namespace: jenkins
   name: service-reader
 rules:
   - apiGroups: [""]
@@ -209,7 +228,11 @@ rules:
     resources: ["secrets"]
     verbs: ["get"]
 
+```
+
 This role will allow our jenkins-master to provision slaves via the Kubernetes API. The apiGroups: [""] refers to the core API group. Next, vi jenkins-master-role-binding.yaml and paste in the following…
+
+```yaml
 
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -218,25 +241,70 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: default
-    namespace: default
+    namespace: jenkins
 roleRef:
   kind: ClusterRole
   name: service-reader
-  apiGroup: rbac.authorization.k8s.io
+  apiGroup: rbac.authorization.k8s.io.
 
-This will bind our new ClusterRole service-reader to the default service account listed in our jenkins-master-deployment.yaml.
-Deploy and Test
+```
+
+This will bind our new ClusterRole service-reader to the default service account listed in our `jenkins-master-deployment.yaml`.
+
+Create persistent volume and persistent volume claims `vi volumes.yaml`.
+
+```yaml
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: jenkins-home
+  namespace: jenkins
+  labels:
+    type: local
+spec:
+  storageClassName: "" #local-hostpath-storage 
+  accessModes:
+    - ReadWriteOnce
+  capacity:
+    storage: 20Gi
+  persistentVolumeReclaimPolicy: Retain  
+  hostPath:
+    path: "/data/jenkins_home"
+    #type: DirectoryOrCreate
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pvc-jenkins-home
+  namespace: jenkins
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "" #local-hostpath-storage
+  volumeName: jenkins-home
+  resources:
+    requests:
+      storage: 10Gi
+
+```
+
+### Deploy Jenkins and Test
 
 Theres no more to do! Time to deploy to the K8s baby!
 
-kubectl apply -f .
+`kubectl apply -f .`
 
 You should see the following output to confirm the success.
 
+```
 deployment.apps/jenkins-master created
 clusterrolebinding.rbac.authorization.k8s.io/service-reader-pod created
 clusterrole.rbac.authorization.k8s.io/service-reader created
 service/jenkins-master created
+
+```
 
 If so, mega congrats! We are almost there.
 
@@ -247,6 +315,8 @@ echo “http://$(minikube ip):30000”
 This should get you to the Jenkins UI. From here we will click on “create new job”, type in a name, “Test Job 1”, choose type “pipeline”, and click “OK”.
 
 On the left hand side click on configure and scroll down to the pipeline groovy editor and paste the following snippet.
+
+```groovy
 
 def POD_LABEL = "testpod"
 podTemplate(label:POD_LABEL, cloud: "jenkins-master", containers: [
@@ -261,26 +331,36 @@ podTemplate(label:POD_LABEL, cloud: "jenkins-master", containers: [
     }
 }
 
-Save and click “Build Now”, then navigate “Back to Dashboard”
+```
 
-https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/
+Save and click “Build Now”, then navigate “Back to Dashboard” [1b], [2b], [3b], [6b], [7b], [8b], [9b].
 
-How to Setup Prometheus Monitoring On Kubernetes Cluster
+
+## How to Setup Prometheus Monitoring On Kubernetes Cluster
 
 Let’s get started with the setup.
 Create a Namespace & ClusterRole
 
 First, we will create a Kubernetes namespace for all our monitoring components. If you don’t create a dedicated namespace, all the Prometheus kubernetes deployment objects get deployed on the default namespace.
 
-Execute the following command to create a new namespace named monitoring.
+Create a new namespace named monitoring `vi prometheus-ns.yaml`
 
-kubectl create namespace monitoring
+```yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+
+```
 
 Prometheus uses Kubernetes APIs to read all the available metrics from Nodes, Pods, Deployments, etc. For this reason, we need to create an RBAC policy with read access to required API groups and bind the policy to the monitoring namespace.
 
-Step 1: Create a file named clusterRole.yaml and copy the following RBAC role.
+Create a file named `clusterRole.yaml` and copy the following RBAC role.
 
-    In the role, given below, you can see that we have added get, list, and watch permissions to nodes, services endpoints, pods, and ingresses. The role binding is bound to the monitoring namespace. If you have any use case to retrieve metrics from any other object, you need to add that in this cluster role.
+In the role, given below, you can see that we have added get, list, and watch permissions to nodes, services endpoints, pods, and ingresses. The role binding is bound to the monitoring namespace. If you have any use case to retrieve metrics from any other object, you need to add that in this cluster role.
+
+```yaml
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -316,45 +396,219 @@ subjects:
   name: default
   namespace: monitoring
 
-Step 2: Create the role using the following command.
+```
 
-kubectl create -f clusterRole.yaml
+Create the role using the following command.
+
+`kubectl create -f clusterRole.yaml`
 
 Create a Config Map To Externalize Prometheus Configurations
 
 All configurations for Prometheus are part of prometheus.yaml file and all the alert rules for Alertmanager are configured in prometheus.rules.
 
-    prometheus.yaml: This is the main Prometheus configuration which holds all the scrape configs, service discovery details, storage locations, data retention configs, etc)
-    prometheus.rules: This file contains all the Prometheus alerting rules
+`prometheus.yml`: This is the main Prometheus configuration which holds all the scrape configs, service discovery details, storage locations, data retention configs, etc)
+prometheus.rules: This file contains all the Prometheus alerting rules
 
 By externalizing Prometheus configs to a Kubernetes config map, you don’t have to build the Prometheus image whenever you need to add or remove a configuration. You need to update the config map and restart the Prometheus pods to apply the new configuration.
 
 The config map with all the Prometheus scrape config and alerting rules gets mounted to the Prometheus container in /etc/prometheus location as prometheus.yaml and prometheus.rules files.
 
-Step 1: Create a file called config-map.yaml and copy the file contents from this link –> Prometheus Config File.
+Create a file called `config-map.yaml`.
 
-Step 2: Execute the following command to create the config map in Kubernetes.
+```yaml
 
-kubectl create -f config-map.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-server-conf
+  labels:
+    name: prometheus-server-conf
+  namespace: monitoring
+data:
+  prometheus.rules: |-
+    groups:
+    - name: devopscube demo alert
+      rules:
+      - alert: High Pod Memory
+        expr: sum(container_memory_usage_bytes) > 1
+        for: 1m
+        labels:
+          severity: slack
+        annotations:
+          summary: High Memory Usage
+  prometheus.yml: |-
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+    rule_files:
+      - /etc/prometheus/prometheus.rules
+    alerting:
+      alertmanagers:
+      - scheme: http
+        static_configs:
+        - targets:
+          - "alertmanager.monitoring.svc:9093"
+
+    scrape_configs:
+      - job_name: 'jenkins'
+        metrics_path: /prometheus
+        static_configs:
+          - targets: ['MINIKUBE_IP:30000'] #JENKINS URL 
+
+      - job_name: 'node-exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_endpoints_name]
+          regex: 'node-exporter'
+          action: keep
+      
+      - job_name: 'kubernetes-apiservers'
+
+        kubernetes_sd_configs:
+        - role: endpoints
+        scheme: https
+
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: default;kubernetes;https
+
+      - job_name: 'kubernetes-nodes'
+
+        scheme: https
+
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+        kubernetes_sd_configs:
+        - role: node
+
+        relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - target_label: __address__
+          replacement: kubernetes.default.svc:443
+        - source_labels: [__meta_kubernetes_node_name]
+          regex: (.+)
+          target_label: __metrics_path__
+          replacement: /api/v1/nodes/${1}/proxy/metrics     
+      
+      - job_name: 'kubernetes-pods'
+
+        kubernetes_sd_configs:
+        - role: pod
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+          action: replace
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+          target_label: __address__
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_pod_name]
+          action: replace
+          target_label: kubernetes_pod_name
+      
+      - job_name: 'kube-state-metrics'
+        static_configs:
+          - targets: ['kube-state-metrics.kube-system.svc.cluster.local:8080']
+
+      - job_name: 'kubernetes-cadvisor'
+
+        scheme: https
+
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+        kubernetes_sd_configs:
+        - role: node
+
+        relabel_configs:
+        - action: labelmap
+          regex: __meta_kubernetes_node_label_(.+)
+        - target_label: __address__
+          replacement: kubernetes.default.svc:443
+        - source_labels: [__meta_kubernetes_node_name]
+          regex: (.+)
+          target_label: __metrics_path__
+          replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
+      
+      - job_name: 'kubernetes-service-endpoints'
+
+        kubernetes_sd_configs:
+        - role: endpoints
+
+        relabel_configs:
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+          action: keep
+          regex: true
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+          action: replace
+          target_label: __scheme__
+          regex: (https?)
+        - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+          action: replace
+          target_label: __metrics_path__
+          regex: (.+)
+        - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+          action: replace
+          target_label: __address__
+          regex: ([^:]+)(?::\d+)?;(\d+)
+          replacement: $1:$2
+        - action: labelmap
+          regex: __meta_kubernetes_service_label_(.+)
+        - source_labels: [__meta_kubernetes_namespace]
+          action: replace
+          target_label: kubernetes_namespace
+        - source_labels: [__meta_kubernetes_service_name]
+          action: replace
+          target_label: kubernetes_name
+
+```
+
+Execute the following command to create the config map in Kubernetes.
+
+`kubectl create -f config-map.yaml`
 
 It creates two files inside the container.
 
-    Note: In Prometheus terms, the config for collecting metrics from a collection of endpoints is called a job. 
+Note: In Prometheus terms, the config for collecting metrics from a collection of endpoints is called a job. 
 
-The prometheus.yaml contains all the configurations to discover pods and services running in the Kubernetes cluster dynamically. We have the following scrape jobs in our Prometheus scrape configuration.
-
+The prometheus.yml contains all the configurations to discover pods and services running in the Kubernetes cluster dynamically. We have the following scrape jobs in our Prometheus scrape configuration.
+```YAML
     kubernetes-apiservers: It gets all the metrics from the API servers.
     kubernetes-nodes: It collects all the kubernetes node metrics.
     kubernetes-pods: All the pod metrics get discovered if the pod metadata is annotated with prometheus.io/scrape and prometheus.io/port annotations.
     kubernetes-cadvisor: Collects all cAdvisor metrics.
     kubernetes-service-endpoints: All the Service endpoints are scrapped if the service metadata is annotated with prometheus.io/scrape and prometheus.io/port annotations. It can be used for black-box monitoring.
-
+```
 prometheus.rules contains all the alert rules for sending alerts to the Alertmanager.
+
 Create a Prometheus Deployment
 
-Step 1: Create a file named prometheus-deployment.yaml and copy the following contents onto the file. In this configuration, we are mounting the Prometheus config map as a file inside /etc/prometheus as explained in the previous section.
+Create a file named prometheus-deployment.yaml and copy the following contents onto the file. In this configuration, we are mounting the Prometheus config map as a file inside /etc/prometheus as explained in the previous section.
 
-    Note: This deployment uses the latest official Prometheus image from the docker hub. Also, we are not using any persistent storage volumes for Prometheus storage as it is a basic setup. When setting up Prometheus for production uses cases, make sure you add persistent storage to the deployment.
+Note: This deployment uses the latest official Prometheus image from the docker hub. Also, we are not using any persistent storage volumes for Prometheus storage as it is a basic setup. When setting up Prometheus for production uses cases, make sure you add persistent storage to the deployment.
+
+```yaml
 
 apiVersion: apps/v1
 kind: Deployment
@@ -377,18 +631,10 @@ spec:
         - name: prometheus
           image: prom/prometheus
           args:
-            - "--storage.tsdb.retention.time=12h"
             - "--config.file=/etc/prometheus/prometheus.yml"
             - "--storage.tsdb.path=/prometheus/"
           ports:
             - containerPort: 9090
-          resources:
-            requests:
-              cpu: 500m
-              memory: 500M
-            limits:
-              cpu: 1
-              memory: 1Gi
           volumeMounts:
             - name: prometheus-config-volume
               mountPath: /etc/prometheus/
@@ -403,60 +649,29 @@ spec:
         - name: prometheus-storage-volume
           emptyDir: {}
 
-    You Might Like: Kubernetes Deployment Tutorial For Beginners
+```
 
-Step 2: Create a deployment on monitoring namespace using the above file.
+Create a deployment on monitoring namespace using the above file.
 
-kubectl create  -f prometheus-deployment.yaml 
+`kubectl create  -f prometheus-deployment.yaml `
 
-Step 3: You can check the created deployment using the following command.
+You can check the created deployment using the following command.
 
-kubectl get deployments --namespace=monitoring
+`kubectl get deployments --namespace=monitoring`
 
-You can also get details from the kubernetes dashboard like shown below.
-prometheus on kubernetes
-Setting Up Kube State Metrics
-
-Kube state metrics service will provide many metrics which is not available by default. Please make sure you deploy Kube state metrics to monitor all your kubernetes API objects like deployments, pods, jobs, cronjobs etc..
-
-Please follow this article to setup Kube state metrics on kubernetes ==> How To Setup Kube State Metrics on Kubernetes
-Connecting To Prometheus Dashboard
 
 You can view the deployed Prometheus dashboard in three different ways.
 
-    Using Kubectl port forwarding
-    Exposing the Prometheus deployment as a service with NodePort or a Load Balancer.
-    Adding an Ingress object if you have an Ingress controller deployed.
-
-Let’s have a look at all three options.
 Using Kubectl port forwarding
-
-Using kubectl port forwarding, you can access a pod from your local workstation using a selected port on your localhost. This method is primarily used for debugging purposes.
-
-Step 1: First, get the Prometheus pod name.
-
-kubectl get pods --namespace=monitoring
-
-The output will look like the following.
-
-➜  kubectl get pods --namespace=monitoring
-NAME                                     READY     STATUS    RESTARTS   AGE
-prometheus-monitoring-3331088907-hm5n1   1/1       Running   0          5m
-
-Step 2: Execute the following command with your pod name to access Prometheus from localhost port 8080.
-
-    Note: Replace prometheus-monitoring-3331088907-hm5n1 with your pod name.
-
-kubectl port-forward prometheus-monitoring-3331088907-hm5n1 8080:9090 -n monitoring
-
-Step 3: Now, if you access http://localhost:8080 on your browser, you will get the Prometheus home page.
-Exposing Prometheus as a Service [NodePort & LoadBalancer]
+Exposing the Prometheus deployment as a service with NodePort or a Load Balancer.
+Adding an Ingress object if you have an Ingress controller deployed.
 
 To access the Prometheus dashboard over a IP or a DNS name, you need to expose it as Kubernetes service.
+Create a file named prometheus-service.yaml and copy the following contents. We will expose Prometheus on all kubernetes node IP’s on port 30000.
 
-Step 1: Create a file named prometheus-service.yaml and copy the following contents. We will expose Prometheus on all kubernetes node IP’s on port 30000.
+Note: If you are on AWS, Azure, or Google Cloud, You can use Loadbalancer type, which will create a load balancer and automatically points it to the Kubernetes service endpoint.
 
-    Note: If you are on AWS, Azure, or Google Cloud, You can use Loadbalancer type, which will create a load balancer and automatically points it to the Kubernetes service endpoint.
+```yaml
 
 apiVersion: v1
 kind: Service
@@ -466,6 +681,7 @@ metadata:
   annotations:
       prometheus.io/scrape: 'true'
       prometheus.io/port:   '9090'
+  
 spec:
   selector: 
     app: prometheus-server
@@ -473,27 +689,31 @@ spec:
   ports:
     - port: 8080
       targetPort: 9090 
-      nodePort: 30000
+      nodePort: 32000
+
+```
 
 The annotations in the above service YAML makes sure that the service endpoint is scrapped by Prometheus. The prometheus.io/port should always be the target port mentioned in service YAML
 
-Step 2: Create the service using the following command.
+Create the service using the following command.
 
-kubectl create -f prometheus-service.yaml --namespace=monitoring
+`kubectl create -f prometheus-service.yaml --namespace=monitoring`
 
-Step 3: Once created, you can access the Prometheus dashboard using any of the Kubernetes nodes IP on port 30000. If you are on the cloud, make sure you have the right firewall rules to access port 30000 from your workstation.
+Step 3: Once created, you can access the Prometheus dashboard using any of the Kubernetes nodes IP on port 30000. If you are on the cloud, make sure you have the right firewall rules to access port 30000 from your workstation [4b], [5b].
 
-How To Setup Grafana On Kubernetes
+## How To Setup Grafana On Kubernetes
 
 Let’s look at the Grafana setup in detail.
 
-Step 1: Create file named grafana-datasource-config.yaml
+Create file named `grafana-datasource-config.yaml`
 
-vi grafana-datasource-config.yaml
+`vi grafana-datasource-config.yaml`
 
 Copy the following contents.
 
-    Note: The following data source configuration is for Prometheus. If you have more data sources, you can add more data sources with different YAMLs under the data section.
+Note: The following data source configuration is for Prometheus. If you have more data sources, you can add more data sources with different YAMLs under the data section.
+
+```yaml
 
 apiVersion: v1
 kind: ConfigMap
@@ -517,15 +737,19 @@ data:
         ]
     }
 
-Step 2: Create the configmap using the following command.
+  ```
 
-kubectl create -f grafana-datasource-config.yaml
+Create the configmap using the following command.
 
-Step 3: Create a file named deployment.yaml
+`kubectl create -f grafana-datasource-config.yaml`
 
-vi deployment.yaml
+Create a file named `deployment.yaml`
+
+`vi deployment.yaml`
 
 Copy the following contents on the file.
+
+```yaml
 
 apiVersion: apps/v1
 kind: Deployment
@@ -570,17 +794,21 @@ spec:
               defaultMode: 420
               name: grafana-datasources
 
-    Note: This Grafana deployment does not use a persistent volume. If you restart the pod all changes will be gone. Use a persistent volume if you are deploying Grafana for your project requirements. It will persist all the configs and data that Grafana uses.
+  ```
 
-Step 4: Create the deployment
+Note: This Grafana deployment does not use a persistent volume. If you restart the pod all changes will be gone. Use a persistent volume if you are deploying Grafana for your project requirements. It will persist all the configs and data that Grafana uses.
 
-kubectl create -f deployment.yaml
+Create the deployment
 
-Step 5: Create a service file named service.yaml
+`kubectl create -f deployment.yaml`
 
-vi service.yaml
+Create a service file named `service.yaml`
+
+`vi service.yaml`
 
 Copy the following contents. This will expose Grafana on NodePort 32000. You can also expose it using ingress or a Loadbalancer based on your requirement.
+
+```yaml
 
 apiVersion: v1
 kind: Service
@@ -597,55 +825,45 @@ spec:
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 32000
+      nodePort: 32500
 
-Step 6: Create the service.
+```
 
-kubectl create -f service.yaml
+Create the service.
 
-Now you should be able to access the Grafana dashboard using any node IP on port 32000. Make sure the port is allowed in the firewall to be accessed from your workstation.
+`kubectl create -f service.yaml`
 
-http://<your-node-ip>:32000
+Now you should be able to access the Grafana dashboard using any node IP on port 32500. Make sure the port is allowed in the firewall to be accessed from your workstation.
 
-You can also use port forwarding using the following command.
+http://<your-node-ip>:32500
 
-kubectl port-forward -n monitoring <grafana-pod-name> 3000 &
 
-For example,
-
-vagrant@dcubelab:~$ kubectl get po -n monitoring
-NAME                       READY   STATUS    RESTARTS   AGE
-grafana-64c89f57f7-kjqrb   1/1     Running   0          10m
-vagrant@dcubelab:~$ kubectl port-forward -n monitoring grafana-64c89f57f7-kjqrb 3000 &
-
-You will be able to access Grafana a from http://localhost:3000
 
 Use the following default username and password to log in. Once you log in with default credentials, it will prompt you to change the default password.
 
 User: admin
 Pass: admin
 
-Grafana dashboard on Kubernetes
-Setup Kubernetes Dashboards on Grafana
+![graphana password](./img/graphana_password.png)
 
-There are many prebuilt Grafana templates available for Kubernetes. To know more, see Grafana Kubernetes Dashboard templates
 
-Setting up a dashboard from a template is pretty easy. Follow the steps given below to set up a Grafana dashboard to monitor kubernetes deployments.
+### Setup Kubernetes Jenkins monitoring on Grafana
 
-Step 1: Get the template ID from grafana public template. as shown below.
-image
+Step 1: Create data source for Prometheus.
 
-Step 2: Head over to grafana and select the import option.
-image 1
+![graphana add data source](./img/graphana_add_data_source.png)
 
-Step 3: Enter the dashboard ID you got it step 1
-image 2
+Step 2: Enter Jenkins IP 
 
-Step 4: Grafana will automatically fetch the template from Grafana website. You can change the values as shown in the image below and click import.
-image 3
+![datasource prometheus](./img/datasource_prometheus.png)
+
+Step 4: Enter the dashboard ID: 9964. Grafana will automatically fetch the template from Grafana website. 
+
+![import dashboard](./img/import_dashboard.png)
 
 You should see the dashboard immediately.
 
+![jenkins graphana dashboard](./img/jenkins_graphana_dashboard.png)
 
 ## Deploy ECK in your Kubernetes cluster
 
@@ -974,89 +1192,93 @@ Login to Grafana, and add Dashboard with ID: 9964
 
 2. [Persistent Volume for Jenkins on Kubernetes] (https://stackoverflow.com/questions/61589595/ persistent-volume-for-jenkins-on-kubernetes) [2b]
 
-3. [Deploying Jenkins on Kubernetes for Scalability and Fault Tolerance] (https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513) [2b]
+3. [Deploying Jenkins on Kubernetes for Scalability and Fault Tolerance] (https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513) [3b]
 
-4. [Kubernetes monitoring with prometheus]
-(https://acloudguru.com/hands-on-labs/kubernetes-monitoring-with-prometheus?utm_campaign=11244863417&utm_source=google&utm_medium=cpc&utm_content=469352928666&utm_term=_&adgroupid=115625160932&gclid=EAIaIQobChMIzqGCicX39AIVZoODBx1DfwA_EAAYASAAEgKYkfD_BwE) [3b]
+4. [Metrics] (https://plugins.jenkins.io/metrics/) [6b]
 
-5. [How to Setup Prometheus Monitoring On Kubernetes Cluster]  (https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/) [4b]
+5. [Monitoring Jenkins] (https://www.jenkins.io/doc/book/system-administration/monitoring/) [7b]
 
-6. [Metrics] (https://plugins.jenkins.io/metrics/) [5b]
+6. [Jenkins Events, Logs, and Metrics] (https://towardsdatascience.com/jenkins-events-logs-and-metrics-7c3e8b28962b) [8b]
 
-7. [Monitoring Jenkins] (https://www.jenkins.io/doc/book/system-administration/monitoring/) [6b]
+7. [Pipeline as code] (https://livebook.manning.com/book/pipeline-as-code/chapter-5/v-4/266) [9b]
 
-8. [Jenkins Events, Logs, and Metrics] (https://towardsdatascience.com/jenkins-events-logs-and-metrics-7c3e8b28962b) [7b]
+8. [Kubernetes monitoring with prometheus]
+(https://acloudguru.com/hands-on-labs/kubernetes-monitoring-with-prometheus?utm_campaign=11244863417&utm_source=google&utm_medium=cpc&utm_content=469352928666&utm_term=_&adgroupid=115625160932&gclid=EAIaIQobChMIzqGCicX39AIVZoODBx1DfwA_EAAYASAAEgKYkfD_BwE) [4b]
 
-9. [Pipeline as code] (https://livebook.manning.com/book/pipeline-as-code/chapter-5/v-4/266) [8b]
+9. [How to Setup Prometheus Monitoring On Kubernetes Cluster]  (https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/) [5b]
 
-10. [How To Gather Infrastructure Metrics with Metricbeat on Ubuntu 18.04] (https://www.stackovercloud.com/2019/03/15/how-to-gather-infrastructure-metrics-with-metricbeat-on-ubuntu-18-04/) [9b]
-
-11. [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376) [10b]
-
-12. Deploy ECK in your Kubernetes cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html [11b]
+11. [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376) [11b]
 
 
-13. Deploy an Elasticsearch cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-elasticsearch.html [12b]
 
-14. Deploy a Kibana instance https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-kibana.html [13b]
+10. [How To Gather Infrastructure Metrics with Metricbeat on Ubuntu 18.04] (https://www.stackovercloud.com/2019/03/15/how-to-gather-infrastructure-metrics-with-metricbeat-on-ubuntu-18-04/) [10b]
 
-15. Run Metricbeat on Kubernetes https://www.elastic.co/guide/en/beats/metricbeat/current/running-on-kubernetes.html#running-on-kubernetes [14b]
 
-16. Configure Kibana dasboard loading https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
-17.  Configure Kibana Endpoint https://www.elastic.co/guide/en/beats/metricbeat/current/setup-kibana-endpoint.html [15b]
+
+12. Deploy ECK in your Kubernetes cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html [12b]
+
+
+13. Deploy an Elasticsearch cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-elasticsearch.html [13b]
+
+14. Deploy a Kibana instance https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-kibana.html [14b]
+
+15. Run Metricbeat on Kubernetes https://www.elastic.co/guide/en/beats/metricbeat/current/running-on-kubernetes.html#running-on-kubernetes [15b]
+
+16. Configure Kibana dasboard loading https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html [16b]
+17.  Configure Kibana Endpoint https://www.elastic.co/guide/en/beats/metricbeat/current/setup-kibana-endpoint.html [17b]
 
 17. Load testing with Jenkins. https://k6.io/blog/integrating-load-testing-with-jenkins/ 
-[16b]
-18. Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03 [17b]
+[18b]
+18. Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03 [19b]
 
-19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins [18b]
+19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins [20b]
 
-20. Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/ [19b]
+20. Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/ [21b]
 
-21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [20b]
+21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [22b]
 
-22. [Performance Test in Jenkins – Run Dynamic Pod Executors in Kubernetes Parallelly] (https://engineering.linecorp.com/en/blog/performance-test-in-jenkins-run-dynamic-pod-executors-in-kubernetes-parallelly/) [21b]
+22. [Performance Test in Jenkins – Run Dynamic Pod Executors in Kubernetes Parallelly] (https://engineering.linecorp.com/en/blog/performance-test-in-jenkins-run-dynamic-pod-executors-in-kubernetes-parallelly/) [23b]
 
 23. [k6 Prometheus Exporter] (https://github.com/benc-uk/k6-prometheus-exporter)
-24. https://github.com/grafana/xk6-output-prometheus-remote [22b]
+24. https://github.com/grafana/xk6-output-prometheus-remote [24b]
 
-25. How to run sidecar container in jenkins pipeline running inside kubernetes https://stackoverflow.com/questions/54589786/how-to-run-sidecar-container-in-jenkins-pipeline-running-inside-kubernetes [23b]
+25. How to run sidecar container in jenkins pipeline running inside kubernetes https://stackoverflow.com/questions/54589786/how-to-run-sidecar-container-in-jenkins-pipeline-running-inside-kubernetes [25b]
 
-5. Jenkinsfile Pipeline: reach ip of sidecar of host [24b]
+5. Jenkinsfile Pipeline: reach ip of sidecar of host [26b]
 
-6. Build your Go image https://docs.docker.com/language/golang/build-images/ [25b]
+6. Build your Go image https://docs.docker.com/language/golang/build-images/ [27b]
 
 7. How To Deploy a Go Web Application with Docker. https://semaphoreci.com/community/tutorials/how-to-deploy-a-go-web-application-with-docker 
-[26b]
-8. Complete Guide to Create Docker Container for Your Golang Application https://levelup.gitconnected.com/complete-guide-to-create-docker-container-for-your-golang-application-80f3fb59a15e [27b]
+[28b]
+8. Complete Guide to Create Docker Container for Your Golang Application https://levelup.gitconnected.com/complete-guide-to-create-docker-container-for-your-golang-application-80f3fb59a15e [29b]
 
 9. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906
 10. How to Setup Jenkins Build Agents on Kubernetes Pods https://devopscube.com/jenkins-build-agents-kubernetes/
-11. https://github.com/benc-uk/k6-prometheus-exporter/blob/main/deploy/example-job.yaml [28b]
+11. https://github.com/benc-uk/k6-prometheus-exporter/blob/main/deploy/example-job.yaml [30b]
 
 
-12. Kubernetes — изучаем паттерн Sidecar https://habr.com/ru/company/nixys/blog/559368/ [29b]
+12. Kubernetes — изучаем паттерн Sidecar https://habr.com/ru/company/nixys/blog/559368/ [31b]
 
-13. Kubernetes — Learn Adapter Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-adaptor-container-pattern-97674285983c [30b]
+13. Kubernetes — Learn Adapter Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-adaptor-container-pattern-97674285983c [32b]
 
-14. Kubernetes — Learn Sidecar Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-sidecar-container-pattern-6d8c21f873d [31b]
+14. Kubernetes — Learn Sidecar Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-sidecar-container-pattern-6d8c21f873d [33b]
 
-15. Differences between Sidecar and Ambassador and Adapter pattern https://stackoverflow.com/questions/59451056/differences-between-sidecar-and-ambassador-and-adapter-pattern [32b]
+15. Differences between Sidecar and Ambassador and Adapter pattern https://stackoverflow.com/questions/59451056/differences-between-sidecar-and-ambassador-and-adapter-pattern [34b]
 
-16. https://stackoverflow.com/questions/58646823/parallel-jenkins-agents-at-kubernetes-with-kubernetes-plugin [33b]
+16. https://stackoverflow.com/questions/58646823/parallel-jenkins-agents-at-kubernetes-with-kubernetes-plugin [35b]
 
-17. Patterns: Sidecars, Ambassadors, and Adapters Containers https://medium.com/swlh/pattern-sidecars-ambassadors-and-adapters-containers-ec8f4140c495 [34b]
+17. Patterns: Sidecars, Ambassadors, and Adapters Containers https://medium.com/swlh/pattern-sidecars-ambassadors-and-adapters-containers-ec8f4140c495 [36b]
 
-18. How To: Kubernetes Pods as Jenkins Build Agents https://medium.com/vivid-seats-engineering/how-to-kubernetes-pods-as-jenkins-build-agents-a726d3886861 [35b]
+18. How To: Kubernetes Pods as Jenkins Build Agents https://medium.com/vivid-seats-engineering/how-to-kubernetes-pods-as-jenkins-build-agents-a726d3886861 [37b]
 
-19. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906 [36b]
+19. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906 [38b]
 
-20. https://stackoverflow.com/questions/38486848/kubernetes-jenkins-plugin-slaves-always-offline [37b]
+20. https://stackoverflow.com/questions/38486848/kubernetes-jenkins-plugin-slaves-always-offline [39b]
 
-21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [38b]
+21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [40b]
 
-22. Client extension for interacting with Kubernetes clusters from your k6 tests. https://golangrepo.com/repo/k6io-xk6-kubernetes [39b]
+22. Client extension for interacting with Kubernetes clusters from your k6 tests. https://golangrepo.com/repo/k6io-xk6-kubernetes [41b]
 
-23. https://github.com/YevhenVieskov/k6 [40b]
+23. https://github.com/YevhenVieskov/k6 [42b]
     
 
