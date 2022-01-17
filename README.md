@@ -2,68 +2,56 @@
 
 ## Deployment algorithm
 
-1. Run minikube cluster.
-
-    `minikube start`
-
-2. Create folder for persistent volume.
-
-    `minikube ssh`
-
-    `sudo mkdir /data/jenkins_home`
-
-Minikube configured for hostPath sets the permissions on /data to the root account only. Once the volume is created you will need to manually change the permissions to allow the jenkins account to write its data.
-
-3. Change permission to `jenkins_home`.
-   
-   `sudo chown -R 1000:1000 /data/jenkins-volume`
-
-4. Exit from minikube.
-
-   `exit`
 
 https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513
 
 Prerequisites
 
-Let’s first install kubectlvia the Kubernetes website.
+Let’s first install kubectl via the Kubernetes website.
 
-Next, let’s install minikube via the Minikube Kubernetes Page. They will ask you to install kubectl which you have already done. Horray!
+Next, let’s install minikube via the Minikube Kubernetes Page. They will ask you to install kubectl which you have already done. 
 
-As a note here again my machine is running Hyperkit as the VM for minikube and I installed minikube through curl not brew.
-
-Let’s run a few commands… minikube start which you can confirm with minikube status. Next… eval $(minikube docker-env)will set the docker environment to minikube. This command has no output so a success is actually just the lack of an error in this case. If we didn’t run this, we would build docker containers outside the VM minikube is running in.
+Let’s run a few commands… `minikube start` which you can confirm with minikube status. 
 
 Setting up the Jenkins Master Repository
 
-Let’s create some new local files that will all be part of the same repository under this cool directory ci-octopus.
+Let’s create some new local files.
 
-init.groovy
+*** init.groovy ***
 
 This file is pretty important and was missing from a lot of the tutorials and sources we found. The tutorials explained how to configure the jenkins kubernetes plugin through the UI, running kubectl commands to get info for the config.
 
 That is all fine and good, but what happens when the jenkins-master node goes down? The new pod will have a different IP and the kubernetes plugin will require different config and manual attention (not very kubernetes-style). That is where this script comes in. It is the “post-init” hook that Jenkins will fire when the instance first starts up… So let’s paste the following code into it.
 
-import org.csanchez.jenkins.plugins.kubernetes.*
-import jenkins.model.*def JENKINS_MASTER_PORT_50000_TCP_ADDR = System.env.JENKINS_MASTER_PORT_50000_TCP_ADDR
-def JENKINS_MASTER_POD_IP = System.env.JENKINS_MASTER_POD_IP
-def JENKINS_MASTER_SERVICE_PORT_HTTP = System.env.JENKINS_MASTER_SERVICE_PORT_HTTP
-def JENKINS_SLAVE_AGENT_PORT = System.env.JENKINS_SLAVE_AGENT_PORT
-def j = Jenkins.getInstance()
-j.setNumExecutors(0)
-def k = new KubernetesCloud(‘jenkins-master’)k.setJenkinsTunnel(JENKINS_MASTER_PORT_50000_TCP_ADDR+”:”+JENKINS_SLAVE_AGENT_PORT);k.setServerUrl(“${YOUR_MINIKUBE_HOST_URL}”);
-k.setJenkinsUrl(“http://”+JENKINS_MASTER_POD_IP+”:”+JENKINS_MASTER_SERVICE_PORT_HTTP);
-k.setNamespace(“default”);j.clouds.replace(k);
-j.save();
+    import org.csanchez.jenkins.plugins.kubernetes.*
+    import jenkins.model.*def JENKINS_MASTER_PORT_50000_TCP_ADDR = System.env.JENKINS_MASTER_PORT_50000_TCP_ADDR
+    def JENKINS_MASTER_POD_IP = System.env.JENKINS_MASTER_POD_IP
+    def JENKINS_MASTER_SERVICE_PORT_HTTP = System.env.JENKINS_MASTER_SERVICE_PORT_HTTP
+    def JENKINS_SLAVE_AGENT_PORT = System.env.JENKINS_SLAVE_AGENT_PORT
+    def j = Jenkins.getInstance()
+    j.setNumExecutors(0)
+    def k = new KubernetesCloud(‘jenkins-master’)k.setJenkinsTunnel(JENKINS_MASTER_PORT_50000_TCP_ADDR+”:”+JENKINS_SLAVE_AGENT_PORT);
+
+    def proc = 'kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})"'.execute()
+    def b = new StringBuffer()
+    proc.consumeProcessErrorStream(b)
+
+    //println proc.text
+    println b.toString()
+
+    def YOUR_MIMIKUBE_HOST_URL=proc.text
+    k.setServerUrl(“${YOUR_MINIKUBE_HOST_URL}”);
+    k.setJenkinsUrl(“http://”+JENKINS_MASTER_POD_IP+”:”+JENKINS_MASTER_SERVICE_PORT_HTTP);
+    k.setNamespace(“default”);j.clouds.replace(k);
+    j.save();
 
 What this script is doing is grabbing a number of environment variables that are available on the container, instantiating a new KubernetesCloud, formatting the variables, and assigning them to the correct properties for the kubernetes config.
 
-The only value that you will have to add to this script is on the setServerURL call. This value YOUR_MINIKUBE_HOST_URL will be the output of the following command kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})"  In other cloud environments this URL will be static (not changing) and can be hard-coded or injected as a secret during the deployment.
-
-cd ci-octopus && vi init.groovy and update the setServerUrl with the your value.
+The only value that you will have to add to this script is on the setServerURL call. This value YOUR_MINIKUBE_HOST_URL will be the output of the following command `kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})" ` In other cloud environments this URL will be static (not changing) and can be hard-coded or injected as a secret during the deployment.
 
 As a side note here as much as possible, wherever possible, it is best to follow the infrastructure as code paradigm… Forcing yourself to operate outside a UI will pay dividends in the future when things go down or a new developer is attempting to grok your cloud infrastructure!
-Dockerfile
+
+*** Dockerfile ***
 
 Now we can build our jenkins-master container.
 
@@ -71,31 +59,52 @@ vi Dockerfile
 
 Paste the following code into the Dockerfile and read through the comments to get an understanding of what we are installing on to the image. The most important plugins are the ssh-slaves, kubernetes, and workflow-aggregator plugins.
 
-FROM jenkins/jenkins:lts# Distributed Builds plugins (managing slaves)
-RUN /usr/local/bin/install-plugins.sh ssh-slaves# install Notifications and Publishing plugins (unused at the moment)
-RUN /usr/local/bin/install-plugins.sh slack# UI 
-RUN /usr/local/bin/install-plugins.sh greenballs# Scaling (main plugin)
-RUN /usr/local/bin/install-plugins.sh kubernetes#GitHub Integration (not used but important)
-RUN /usr/local/bin/install-plugins.sh github#Pipeline for creating pipeline jobs
-RUN /usr/local/bin/install-plugins.sh workflow-aggregator#Groovy post-init script
-COPY init.groovy /usr/share/jenkins/ref/init.groovy.d/init.groovyUSER jenkins
+    FROM jenkins/jenkins:lts
+    # Distributed Builds plugins (managing slaves)
+    RUN /usr/local/bin/install-plugins.sh ssh-slaves
+    # install Notifications and Publishing plugins (unused at the moment)
+    RUN /usr/local/bin/install-plugins.sh slack
+    # UI 
+    RUN /usr/local/bin/install-plugins.sh greenballs
+    # Scaling (main plugin)
+    RUN /usr/local/bin/install-plugins.sh kubernetes
+    #GitHub Integration (not used but important)
+    RUN /usr/local/bin/install-plugins.sh github
+    #Pipeline for creating pipeline jobs
+    RUN /usr/local/bin/install-plugins.sh workflow-aggregator
+    #Metrics plugin for Jenkins
+    RUN /usr/local/bin/install-plugins.sh metrics
+    #Jenkins Prometheus Plugin expose an endpoint (default /prometheus) with metrics where a Prometheus Server can scrape.
+    RUN /usr/local/bin/install-plugins.sh prometheus:2.0.10
+    #Jenkins test result aggregator https://github.com/jenkinsci/test-results-aggregator-plugin
+    RUN /usr/local/bin/install-plugins.sh test-results-aggregator
+    #Jenkins test result analizer https://github.com/jenkinsci/test-results-analizer
+    RUN /usr/local/bin/install-plugins.sh test-results-analyzer:0.3.5
+    #Jenkins logstash plugin https://github.com/jenkinsci/logstash-plugin
+    RUN /usr/local/bin/install-plugins.sh logstash
+    #Groovy post-init script
+    COPY init.groovy /usr/share/jenkins/ref/init.groovy.d/init.groovy
+    USER jenkins
 
 If you like you can collapse all the plugin installs into a single command a la..
 
-RUN /usr/local/bin/install-plugins.sh ssh-slaves slack greenballs kubernetes github workflow-aggregator
+`RUN /usr/local/bin/install-plugins.sh ssh-slaves slack greenballs kubernetes github workflow-aggregator`
 
 Before finishing the docker stuff let’s run one more command to build our image with our desired tag.
 
-docker build -t jenkins-master:1.0 .
+`docker build -t jenkins-master:1.0 .`
 
-Kubernetes Pod Deployment
+## Kubernetes Pod Deployment
 
 Lets run this command, vi jenkins-master-deployment.yaml and paste the following code into it…
+
+```
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: jenkins-master
+  namespace: jenkins
 spec:
   replicas: 1
   selector:
@@ -109,10 +118,13 @@ spec:
         app: jenkins-master
     spec:
       serviceAccountName: default
+      securityContext: # Set runAsUser to 1000 to let Jenkins run as non-root user 'jenkins' which exists in 'jenkins/jenkins'
+        runAsUser: 0
+        fsGroup: 1000        
       containers:
         - name: jenkins
-          image: jenkins-master:1.0
-          imagePullPolicy: Never
+          image: vieskov1980/jenkins-master:1.0
+          imagePullPolicy: IfNotPresent #Never
           env:
             - name: JAVA_OPTS
               value: -Djenkins.install.runSetupWizard=false
@@ -127,10 +139,16 @@ spec:
               containerPort: 50000
           volumeMounts:
             - name: jenkins-home
-              mountPath: /var/jenkins_home
+              mountPath: "/var/jenkins_home"
       volumes:
-        - name: jenkins-home
-          emptyDir: {}
+        #- name: jenkins-home
+          #emptyDir: {}
+      - name: jenkins-home
+        persistentVolumeClaim:
+          claimName: pvc-jenkins-home
+      restartPolicy: Always  
+
+```  
 
 Most of the code above the spec object is standard. We are going to name the pod jenkins-master with a Recreate deployment strategy. Once we get into the spec object there are a couple important things going on. The serviceAccountName is the account we will give permissions to be able to interact with the kubernetes API. The image property will be the name of the container that we built in the previous docker-build step as the -t argument jenkins-master.
 
@@ -945,49 +963,93 @@ Login to Grafana, and add Dashboard with ID: 9964
 
 ## Links
 
-1. [Install Jenkins on kubernetes](https://www.jenkins.io/doc/book/installing/kubernetes/)
+1. [Install Jenkins on kubernetes](https://www.jenkins.io/doc/book/installing/kubernetes/) [1b]
 
-2. [Persistent Volume for Jenkins on Kubernetes] (https://stackoverflow.com/questions/61589595/persistent-volume-for-jenkins-on-kubernetes)
+2. [Persistent Volume for Jenkins on Kubernetes] (https://stackoverflow.com/questions/61589595/ persistent-volume-for-jenkins-on-kubernetes) [2b]
 
-3. [Deploying Jenkins on Kubernetes for Scalability and Fault Tolerance] (https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513)
+3. [Deploying Jenkins on Kubernetes for Scalability and Fault Tolerance] (https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513) [2b]
 
 4. [Kubernetes monitoring with prometheus]
-(https://acloudguru.com/hands-on-labs/kubernetes-monitoring-with-prometheus?utm_campaign=11244863417&utm_source=google&utm_medium=cpc&utm_content=469352928666&utm_term=_&adgroupid=115625160932&gclid=EAIaIQobChMIzqGCicX39AIVZoODBx1DfwA_EAAYASAAEgKYkfD_BwE)
+(https://acloudguru.com/hands-on-labs/kubernetes-monitoring-with-prometheus?utm_campaign=11244863417&utm_source=google&utm_medium=cpc&utm_content=469352928666&utm_term=_&adgroupid=115625160932&gclid=EAIaIQobChMIzqGCicX39AIVZoODBx1DfwA_EAAYASAAEgKYkfD_BwE) [3b]
 
-5. [How to Setup Prometheus Monitoring On Kubernetes Cluster]  (https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/)
+5. [How to Setup Prometheus Monitoring On Kubernetes Cluster]  (https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/) [4b]
 
-6. [Metrics] (https://plugins.jenkins.io/metrics/)
+6. [Metrics] (https://plugins.jenkins.io/metrics/) [5b]
 
-7. [Monitoring Jenkins] (https://www.jenkins.io/doc/book/system-administration/monitoring/)
+7. [Monitoring Jenkins] (https://www.jenkins.io/doc/book/system-administration/monitoring/) [6b]
 
-8. [Jenkins Events, Logs, and Metrics] (https://towardsdatascience.com/jenkins-events-logs-and-metrics-7c3e8b28962b)
+8. [Jenkins Events, Logs, and Metrics] (https://towardsdatascience.com/jenkins-events-logs-and-metrics-7c3e8b28962b) [7b]
 
-9. [Pipeline as code] (https://livebook.manning.com/book/pipeline-as-code/chapter-5/v-4/266)
+9. [Pipeline as code] (https://livebook.manning.com/book/pipeline-as-code/chapter-5/v-4/266) [8b]
 
-10. [How To Gather Infrastructure Metrics with Metricbeat on Ubuntu 18.04] (https://www.stackovercloud.com/2019/03/15/how-to-gather-infrastructure-metrics-with-metricbeat-on-ubuntu-18-04/)
+10. [How To Gather Infrastructure Metrics with Metricbeat on Ubuntu 18.04] (https://www.stackovercloud.com/2019/03/15/how-to-gather-infrastructure-metrics-with-metricbeat-on-ubuntu-18-04/) [9b]
 
-11. [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376)
+11. [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376) [10b]
 
-12. Deploy ECK in your Kubernetes cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html
+12. Deploy ECK in your Kubernetes cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-eck.html [11b]
 
 
-13. Deploy an Elasticsearch cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-elasticsearch.html
+13. Deploy an Elasticsearch cluster https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-elasticsearch.html [12b]
 
-14. Deploy a Kibana instance https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-kibana.html
+14. Deploy a Kibana instance https://www.elastic.co/guide/en/cloud-on-k8s/current/k8s-deploy-kibana.html [13b]
 
-15. Run Metricbeat on Kubernetes https://www.elastic.co/guide/en/beats/metricbeat/current/running-on-kubernetes.html#running-on-kubernetes
+15. Run Metricbeat on Kubernetes https://www.elastic.co/guide/en/beats/metricbeat/current/running-on-kubernetes.html#running-on-kubernetes [14b]
 
 16. Configure Kibana dasboard loading https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
-17.  Configure Kibana Endpoint https://www.elastic.co/guide/en/beats/metricbeat/current/setup-kibana-endpoint.html
+17.  Configure Kibana Endpoint https://www.elastic.co/guide/en/beats/metricbeat/current/setup-kibana-endpoint.html [15b]
 
-17. Load testing with Jenkins. https://k6.io/blog/integrating-load-testing-with-jenkins/
+17. Load testing with Jenkins. https://k6.io/blog/integrating-load-testing-with-jenkins/ 
+[16b]
+18. Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03 [17b]
 
-18. Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03
+19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins [18b]
 
-19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins
+20. Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/ [19b]
 
-20. Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/
+21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [20b]
 
-21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/
+22. [Performance Test in Jenkins – Run Dynamic Pod Executors in Kubernetes Parallelly] (https://engineering.linecorp.com/en/blog/performance-test-in-jenkins-run-dynamic-pod-executors-in-kubernetes-parallelly/) [21b]
+
+23. [k6 Prometheus Exporter] (https://github.com/benc-uk/k6-prometheus-exporter)
+24. https://github.com/grafana/xk6-output-prometheus-remote [22b]
+
+25. How to run sidecar container in jenkins pipeline running inside kubernetes https://stackoverflow.com/questions/54589786/how-to-run-sidecar-container-in-jenkins-pipeline-running-inside-kubernetes [23b]
+
+5. Jenkinsfile Pipeline: reach ip of sidecar of host [24b]
+
+6. Build your Go image https://docs.docker.com/language/golang/build-images/ [25b]
+
+7. How To Deploy a Go Web Application with Docker. https://semaphoreci.com/community/tutorials/how-to-deploy-a-go-web-application-with-docker 
+[26b]
+8. Complete Guide to Create Docker Container for Your Golang Application https://levelup.gitconnected.com/complete-guide-to-create-docker-container-for-your-golang-application-80f3fb59a15e [27b]
+
+9. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906
+10. How to Setup Jenkins Build Agents on Kubernetes Pods https://devopscube.com/jenkins-build-agents-kubernetes/
+11. https://github.com/benc-uk/k6-prometheus-exporter/blob/main/deploy/example-job.yaml [28b]
+
+
+12. Kubernetes — изучаем паттерн Sidecar https://habr.com/ru/company/nixys/blog/559368/ [29b]
+
+13. Kubernetes — Learn Adapter Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-adaptor-container-pattern-97674285983c [30b]
+
+14. Kubernetes — Learn Sidecar Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-sidecar-container-pattern-6d8c21f873d [31b]
+
+15. Differences between Sidecar and Ambassador and Adapter pattern https://stackoverflow.com/questions/59451056/differences-between-sidecar-and-ambassador-and-adapter-pattern [32b]
+
+16. https://stackoverflow.com/questions/58646823/parallel-jenkins-agents-at-kubernetes-with-kubernetes-plugin [33b]
+
+17. Patterns: Sidecars, Ambassadors, and Adapters Containers https://medium.com/swlh/pattern-sidecars-ambassadors-and-adapters-containers-ec8f4140c495 [34b]
+
+18. How To: Kubernetes Pods as Jenkins Build Agents https://medium.com/vivid-seats-engineering/how-to-kubernetes-pods-as-jenkins-build-agents-a726d3886861 [35b]
+
+19. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906 [36b]
+
+20. https://stackoverflow.com/questions/38486848/kubernetes-jenkins-plugin-slaves-always-offline [37b]
+
+21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [38b]
+
+22. Client extension for interacting with Kubernetes clusters from your k6 tests. https://golangrepo.com/repo/k6io-xk6-kubernetes [39b]
+
+23. https://github.com/YevhenVieskov/k6 [40b]
     
 
