@@ -17,33 +17,36 @@ Setting up the Jenkins Master Repository
 
 Let’s create some new local files.
 
-*** init.groovy ***
+***init.groovy***
 
 This file is pretty important and was missing from a lot of the tutorials and sources we found. The tutorials explained how to configure the jenkins kubernetes plugin through the UI, running kubectl commands to get info for the config.
 
 That is all fine and good, but what happens when the jenkins-master node goes down? The new pod will have a different IP and the kubernetes plugin will require different config and manual attention (not very kubernetes-style). That is where this script comes in. It is the “post-init” hook that Jenkins will fire when the instance first starts up… So let’s paste the following code into it.
 
-    import org.csanchez.jenkins.plugins.kubernetes.*
-    import jenkins.model.*def JENKINS_MASTER_PORT_50000_TCP_ADDR = System.env.JENKINS_MASTER_PORT_50000_TCP_ADDR
-    def JENKINS_MASTER_POD_IP = System.env.JENKINS_MASTER_POD_IP
-    def JENKINS_MASTER_SERVICE_PORT_HTTP = System.env.JENKINS_MASTER_SERVICE_PORT_HTTP
-    def JENKINS_SLAVE_AGENT_PORT = System.env.JENKINS_SLAVE_AGENT_PORT
-    def j = Jenkins.getInstance()
-    j.setNumExecutors(0)
-    def k = new KubernetesCloud(‘jenkins-master’)k.setJenkinsTunnel(JENKINS_MASTER_PORT_50000_TCP_ADDR+”:”+JENKINS_SLAVE_AGENT_PORT);
+```groovy
 
-    def proc = 'kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})"'.execute()
-    def b = new StringBuffer()
-    proc.consumeProcessErrorStream(b)
+import org.csanchez.jenkins.plugins.kubernetes.*
+import jenkins.model.*def JENKINS_MASTER_PORT_50000_TCP_ADDR = System.env.JENKINS_MASTER_PORT_50000_TCP_ADDR
+def JENKINS_MASTER_POD_IP = System.env.JENKINS_MASTER_POD_IP
+def JENKINS_MASTER_SERVICE_PORT_HTTP = System.env.JENKINS_MASTER_SERVICE_PORT_HTTP
+def JENKINS_SLAVE_AGENT_PORT = System.env.JENKINS_SLAVE_AGENT_PORT
+def j = Jenkins.getInstance()
+j.setNumExecutors(0)
+def k = new KubernetesCloud(‘jenkins-master’)k.setJenkinsTunnel(JENKINS_MASTER_PORT_50000_TCP_ADDR+”:”+JENKINS_SLAVE_AGENT_PORT);
 
-    //println proc.text
-    println b.toString()
+def proc = 'kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})"'.execute()
+def b = new StringBuffer()
+proc.consumeProcessErrorStream(b)
 
-    def YOUR_MIMIKUBE_HOST_URL=proc.text
-    k.setServerUrl(“${YOUR_MINIKUBE_HOST_URL}”);
-    k.setJenkinsUrl(“http://”+JENKINS_MASTER_POD_IP+”:”+JENKINS_MASTER_SERVICE_PORT_HTTP);
-    k.setNamespace(“default”);j.clouds.replace(k);
-    j.save();
+//println proc.text
+println b.toString()
+
+def YOUR_MIMIKUBE_HOST_URL=proc.text
+k.setServerUrl(“${YOUR_MINIKUBE_HOST_URL}”);
+k.setJenkinsUrl(“http://”+JENKINS_MASTER_POD_IP+”:”+JENKINS_MASTER_SERVICE_PORT_HTTP);
+k.setNamespace(“default”);j.clouds.replace(k);
+j.save();
+```
 
 What this script is doing is grabbing a number of environment variables that are available on the container, instantiating a new KubernetesCloud, formatting the variables, and assigning them to the correct properties for the kubernetes config.
 
@@ -51,7 +54,7 @@ The only value that you will have to add to this script is on the setServerURL c
 
 As a side note here as much as possible, wherever possible, it is best to follow the infrastructure as code paradigm… Forcing yourself to operate outside a UI will pay dividends in the future when things go down or a new developer is attempting to grok your cloud infrastructure!
 
-*** Dockerfile ***
+***Dockerfile***
 
 Now we can build our jenkins-master container.
 
@@ -59,6 +62,8 @@ vi Dockerfile
 
 Paste the following code into the Dockerfile and read through the comments to get an understanding of what we are installing on to the image. The most important plugins are the ssh-slaves, kubernetes, and workflow-aggregator plugins.
 
+```Dockerfile
+    
     FROM jenkins/jenkins:lts
     # Distributed Builds plugins (managing slaves)
     RUN /usr/local/bin/install-plugins.sh ssh-slaves
@@ -86,6 +91,8 @@ Paste the following code into the Dockerfile and read through the comments to ge
     COPY init.groovy /usr/share/jenkins/ref/init.groovy.d/init.groovy
     USER jenkins
 
+```
+
 If you like you can collapse all the plugin installs into a single command a la..
 
 `RUN /usr/local/bin/install-plugins.sh ssh-slaves slack greenballs kubernetes github workflow-aggregator`
@@ -98,7 +105,7 @@ Before finishing the docker stuff let’s run one more command to build our imag
 
 Lets run this command, vi jenkins-master-deployment.yaml and paste the following code into it…
 
-```
+```yaml
 
 apiVersion: apps/v1
 kind: Deployment
