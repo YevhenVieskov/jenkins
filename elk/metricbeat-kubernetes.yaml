@@ -8,6 +8,10 @@ metadata:
     k8s-app: metricbeat
 data:
   metricbeat.yml: |-
+    setup.dashboards.enabled: true #https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
+    setup.dashboard.beat: metricbeat
+    setup.kibana.host: "http://192.168.49.2:30601"                  #"http://localhost:5601"
+    ##############################
     metricbeat.config.modules:
       # Mounted `metricbeat-daemonset-modules` configmap:
       path: ${path.config}/modules.d/*.yml
