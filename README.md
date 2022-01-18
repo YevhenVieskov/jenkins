@@ -1237,6 +1237,10 @@ metadata:
     k8s-app: metricbeat
 data:
   metricbeat.yml: |-
+    setup.dashboards.enabled: true #https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
+    setup.dashboard.beat: metricbeat
+    setup.kibana.host: "http://minikube_ip:30601"                 
+    ##############################
     metricbeat.config.modules:
       # Mounted `metricbeat-daemonset-modules` configmap:
       path: ${path.config}/modules.d/*.yml
@@ -1311,7 +1315,7 @@ data:
     #========================== Outputs ================================
     
     output.logstash:
-      hosts: ["LOGSTASH_INTERNAL_IP:5044"]
+      hosts: ["logstash_ip:5044"]
       bulk_max_size: 200
     
     #======================== Processors ==============================
@@ -1622,6 +1626,25 @@ Steps to create Index Pattern in Kibana:
     4. You will be able to see all the Jenkins indices will get listed. Then, click on the Next step.
     5. Choose the time filter (say @timestamp). Then, click on the Create index pattern [43b], [45b].
 
+### Metricbeat install dashboard
+
+File ***metricbeat.yml*** must have next strings:
+
+```yaml
+setup.dashboards.enabled: true 
+setup.dashboard.beat: metricbeat
+setup.kibana.host: "http://MINIKUBE_IP:30601" 
+
+``` 
+
+Run command:
+
+`kubectl exec -it metricbeat-pod -n logging  -- /bin/sh`
+
+Install dashboard to metricbeat pod: 
+
+`./metricbeat setup -E setup.kibana.host=MINIKUBE_IP:30601`
+
 ## K6 Load Tests
 
 ### K6 Export Results to JUnit with Jenkins Shared Library
@@ -1869,7 +1892,7 @@ The script can also be used for different types of tests besides API Integration
 
 Configure Jenkins Shared Library in Web Interface
 
-[] () 
+![jenkins shared library] (./img/shared-library2.png) 
 
 New version of K6 has function for custom output.
 
@@ -1952,6 +1975,9 @@ For each team that wants to use the platform, the following attributes are provi
     DURATION and VIRTUAL_USER: Check the definition of duration and VUs in the official k6 documentation [23b].
 
     ![build parameters](img/image2020-12-28_17-6-1.png)
+
+
+   Kubernetes cloud settings you can see on the next screenshots. 
     
 Custom ***Dockerfile*** for K6 with Prometheus extension [27b], [28b], [29b].
 
@@ -2005,8 +2031,9 @@ pipeline {
   }
   agent {
     kubernetes {
-      
-      yamlFile 'KubernetesPod.yaml'
+      label 'k6node'
+      //yamlFile 'KubernetesPod.yaml'
+      yamlFile 'KubernetesPodPESidecar.yaml'
       //defaultContainer 'k6' 
     }
   }
@@ -2038,6 +2065,8 @@ pipeline {
                     echo 'Running K6 performance tests...'
                     sh "k6 run ${params.GIT_RAW_FILE}  --duration ${params.DURATION} --vus ${params.VIRTUAL_USER} "
                     sh "k6 run script.js "
+                    sh "k6 run --out json=results.json script.js"
+
 
                   }
                 }
@@ -2049,19 +2078,21 @@ pipeline {
       }
     }
 
-    /*stage('Convertation of Testing Results') {
-      steps {
-          k6JsonToJunitXml("${JENKINS_HOME}/results-0.json", "${JENKINS_HOME}/output-0.xml")
-      }
-      post {
-				  always {							
-					    junit(
-                  allowEmptyResults: true,
-                  testResults: "${JENKINS_HOME}/output.xml" 
-                  )
-              }        
-      }           
-    }*/
+    stage('Convertation of Testing Results') {
+            steps {
+                k6JsonToJunitXml("${env.JENKINS_HOME}/workspace/${env.JOB_NAME}/results.json", "${env.JENKINS_HOME}/workspace/${env.JOB_NAME}/output.xml")
+            }
+             post {
+				always {							
+					junit(
+                        allowEmptyResults: true,
+                        testResults: "${env.JENKINS_HOME}/workspace/${env.JOB_NAME}/output.xml" 
+                    )
+                }        
+            }
+
+            
+        }
 
   }
 }
@@ -2098,7 +2129,7 @@ spec:
   - name: k6
     image: loadimpact/k6:latest         #your.docker_registry.com/your_org/k6:your_image_version  
     #args: ['run', 'https://raw.githubusercontent.com/loadimpact/k6/master/samples/http_get.js']
-    command: ["tail","-f","/dev/null"]
+    command: ["/bin/sh"]
     resources:
       requests:
           cpu: "100m"
@@ -2117,17 +2148,14 @@ Sidecar container for export K6 metrics to Prometheus.
 apiVersion: v1
 kind: Pod
 metadata:
+  annotations:
+    prometheus.io/port: '2112'
+    prometheus.io/scrape: 'true'
   name: k6node ## since this file is cached as Jenkins node template, change this name when below attributes are updated, otherwise it will keep using old ones!!! Need to update Jenkinsfile also.
   labels:
     app: k6
 spec:
   namespace: jenkins
-    template:
-      metadata:
-        # These are important, for Prometheus to pick up the data
-        annotations:
-          prometheus.io/port: '2112'
-          prometheus.io/scrape: 'true'
   affinity:
     podAntiAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
@@ -2144,8 +2172,10 @@ spec:
                   - k6node
   containers:
   - name: k6
-    image: loadimpact/k6:latest         #your.docker_registry.com/your_org/k6:your_image_version
-    command: ["tail","-f","/dev/null"]
+    image: loadimpact/k6:latest         #your.docker_registry.com/your_org/k6:your_image_version  
+    #args: ['run', 'https://raw.githubusercontent.com/loadimpact/k6/master/samples/http_get.js']
+    #command: ["tail","-f","/dev/null"]
+    command: ["/bin/sh"]
     resources:
       requests:
           cpu: "100m"
@@ -2153,11 +2183,13 @@ spec:
     tty: true
     securityContext: ## <-- When define USER in Dockerfile, securityContext should be added with root user, so that shell script will not hang in container
       runAsUser: 0
-    - name: k6-exporter
-      image: ghcr.io/benc-uk/k6-prometheus-exporter:latest
-      imagePullPolicy: Always
-      ports:
-        - containerPort: 2112
+
+  # Adds the k6-prometheus-exporter sidecar
+  - name: k6-exporter
+    image: ghcr.io/benc-uk/k6-prometheus-exporter:latest
+    imagePullPolicy: Always
+    ports:
+      - containerPort: 2112    
 
 
 ```
@@ -2200,6 +2232,8 @@ To show K6 testing metrics on Grafana dashboards:
     Graphana dashboard for K6 (https://grafana.com/grafana/dashboards/2587)
 
 
+
+## Kibana Jenkins monitoring with Logstash and metricbeat
 
 
 
