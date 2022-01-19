@@ -1188,36 +1188,7 @@ spec:
   type: ClusterIP
 
 ```
-`vi logstash-pipeline-test.groovy`
 
-```groovy
-
-pipeline{
-    agent none
-    stages {
-        stage("first"){
-            steps {
-                
-                      logstash{ 
-                       echo "hello world 1"
-                      }
-                  
-                
-            }
-        }
-        stage("second"){
-            steps{
-                
-                    logstash {
-                        echo "hello world 2"
-                    }
-                
-            }
-        }
-    }
-}
-
-```
 
 ### Configuring Metricbeat
 
@@ -1608,7 +1579,40 @@ metadata:
 
 Configure Logstash Plugin in Jenkins System Configuration.
 
-[Jenkins Logstash Plugin] [./img/jenkins-logstash-plugin.png]
+![Jenkins Logstash Plugin] [./img/jenkins-logstash-plugin.png]
+
+
+Test Jenkins Logstash plugin. Create Jenkins Pipeline Job and run declarative pipeline:
+
+```groovy
+
+pipeline{
+    agent none
+    stages {
+        stage("first"){
+            steps {
+                
+                      logstash{ 
+                       echo "hello world 1"
+                      }
+                  
+                
+            }
+        }
+        stage("second"){
+            steps{
+                
+                    logstash {
+                        echo "hello world 2"
+                    }
+                
+            }
+        }
+    }
+}
+
+```
+
 
 ### Configuring Elasticsearch
 
@@ -1959,7 +1963,7 @@ So, in the following sections, we are going to show you how to leverage dynamic 
 
 In LINE Taiwan, most of the time we use k6 as our load testing tool, so the setup below is based on this scenario, but should be the same for other tools as well.
 
-## Architecture diagram
+### Architecture diagram
 
 The idea here is to prepare a platform that uses the Kubernetes plugin for Jenkins which allows each team to run their performance (k6) test scripts without worrying about underlying infrastructure setup and maintenance.
 
@@ -1977,7 +1981,7 @@ For each team that wants to use the platform, the following attributes are provi
     ![build parameters](img/image2020-12-28_17-6-1.png)
 
 
-   Kubernetes cloud settings you can see on the next screenshots. 
+### Jenkins pipeline for dynamic pods    
     
 Custom ***Dockerfile*** for K6 with Prometheus extension [27b], [28b], [29b].
 
@@ -2212,6 +2216,24 @@ export default function () {
 }
 
 ```
+### Configure Jenkins Kubernetes Cloud
+
+Choose Manage Jenkins -> Manage Nodes and Clouds
+
+![cloud-jenkins] (./img/cloud-jenkins.webp)
+
+Configure Jenkins as on screenshots
+
+![configure-cloud1] (./img/configure_cloud1.png)
+
+
+![configure-cloud2] (./img/configure_cloud2.png)
+
+
+![configure-cloud3] (./img/configure_cloud3.png)
+
+
+
 
 
 To show K6 testing metrics on Grafana dashboards:
@@ -2229,7 +2251,7 @@ To show K6 testing metrics on Grafana dashboards:
         Select the  name from the dropdown list
         Click Import
 
-    Graphana dashboard for K6 (https://grafana.com/grafana/dashboards/2587)
+    Graphana dashboard for K6 (https://grafana.com/grafana/dashboards/2587) [23b]
 
 
 
