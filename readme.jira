@@ -1,29 +1,29 @@
-# Jenkins in Kubernetes monitoring with Prometheus and Graphana 
+h1. Jenkins in Kubernetes monitoring with Prometheus and Graphana 
 
-## Jenkins Deployment 
+h2. Jenkins Deployment 
 
 
 https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513
 
-### Prerequisites
+h3. Prerequisites
 
 Let’s first install kubectl via the Kubernetes website.
 
 Next, let’s install minikube via the Minikube Kubernetes Page. They will ask you to install kubectl which you have already done. 
 
-Let’s run a few commands… `minikube start` which you can confirm with minikube status. 
+Let’s run a few commands… {{minikube start}} which you can confirm with minikube status. 
 
 Setting up the Jenkins Master Repository
 
 Let’s create some new local files.
 
-***init.groovy***
+_*init.groovy*_
 
 This file is pretty important and was missing from a lot of the tutorials and sources we found. The tutorials explained how to configure the jenkins kubernetes plugin through the UI, running kubectl commands to get info for the config.
 
 That is all fine and good, but what happens when the jenkins-master node goes down? The new pod will have a different IP and the kubernetes plugin will require different config and manual attention (not very kubernetes-style). That is where this script comes in. It is the “post-init” hook that Jenkins will fire when the instance first starts up… So let’s paste the following code into it.
 
-```groovy
+{code:groovy}
 
 import org.csanchez.jenkins.plugins.kubernetes.*
 import jenkins.model.*
@@ -47,15 +47,15 @@ k.setServerUrl(“${YOUR_MINIKUBE_HOST_URL}”);
 k.setJenkinsUrl(“http://”+JENKINS_MASTER_POD_IP+”:”+JENKINS_MASTER_SERVICE_PORT_HTTP);
 k.setNamespace(“default”);j.clouds.replace(k);
 j.save();
-```
+{code}
 
 What this script is doing is grabbing a number of environment variables that are available on the container, instantiating a new KubernetesCloud, formatting the variables, and assigning them to the correct properties for the kubernetes config.
 
-The only value that you will have to add to this script is on the setServerURL call. This value YOUR_MINIKUBE_HOST_URL will be the output of the following command `kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})" ` In other cloud environments this URL will be static (not changing) and can be hard-coded or injected as a secret during the deployment.
+The only value that you will have to add to this script is on the setServerURL call. This value YOUR_MINIKUBE_HOST_URL will be the output of the following command {{kubectl cluster-info | grep -Eom1 "https://(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?:[0-9]{1,3})" }} In other cloud environments this URL will be static (not changing) and can be hard-coded or injected as a secret during the deployment.
 
 As a side note here as much as possible, wherever possible, it is best to follow the infrastructure as code paradigm… Forcing yourself to operate outside a UI will pay dividends in the future when things go down or a new developer is attempting to grok your cloud infrastructure!
 
-***Dockerfile***
+_*Dockerfile*_
 
 Now we can build our jenkins-master container.
 
@@ -63,7 +63,7 @@ vi Dockerfile
 
 Paste the following code into the Dockerfile and read through the comments to get an understanding of what we are installing on to the image. The most important plugins are the ssh-slaves, kubernetes, and workflow-aggregator plugins.
 
-```Dockerfile
+{code:Dockerfile}
     
     FROM jenkins/jenkins:lts
     # Distributed Builds plugins (managing slaves)
@@ -92,32 +92,32 @@ Paste the following code into the Dockerfile and read through the comments to ge
     COPY init.groovy /usr/share/jenkins/ref/init.groovy.d/init.groovy
     USER jenkins
 
-```
+{code}
 
 If you like you can collapse all the plugin installs into a single command a la..
 
-`RUN /usr/local/bin/install-plugins.sh ssh-slaves slack greenballs kubernetes github workflow-aggregator`
+{{RUN /usr/local/bin/install-plugins.sh ssh-slaves slack greenballs kubernetes github workflow-aggregator}}
 
 Before finishing the docker stuff let’s run one more command to build our image with our desired tag.
 
-`docker build -t jenkins-master:1.0 .`
+{{docker build -t jenkins-master:1.0 .}}
 
-### Kubernetes Pod Deployment
+h3. Kubernetes Pod Deployment
 
-Create namespace vi `jenkins-master-deployment.yaml` and paste the following code into it.
+Create namespace vi {{jenkins-master-deployment.yaml}} and paste the following code into it.
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Namespace
 metadata:
   name: jenkins
 
-```
+{code}
 
-Lets run this command, vi `jenkins-master-deployment.yaml` and paste the following code into it…
+Lets run this command, vi {{jenkins-master-deployment.yaml}} and paste the following code into it…
 
-```yaml
+{code:yaml}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -167,16 +167,16 @@ spec:
           claimName: pvc-jenkins-home
       restartPolicy: Always  
 
-```  
+{code}  
 
 Most of the code above the spec object is standard. We are going to name the pod jenkins-master with a Recreate deployment strategy. Once we get into the spec object there are a couple important things going on. The serviceAccountName is the account we will give permissions to be able to interact with the kubernetes API. The image property will be the name of the container that we built in the previous docker-build step as the -t argument jenkins-master.
 
 We add in two environment variables, one that disables the Jenkins setup wizard and will auto-setup Jenkins on container spin-up, the second is the ip of the pod once it has spun up injected as status.podIP. We expose two ports 8080 for external traffic to Jenkins and 50000 because is the default port for the jnlp-slaves communication.
 Kubernetes Service
 
-Now that we have the deployment lets create the kubernetes service with a `vi jenkins-master-service.yaml` pasting the following code into it...
+Now that we have the deployment lets create the kubernetes service with a {{vi jenkins-master-service.yaml}} pasting the following code into it...
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Service
@@ -197,14 +197,14 @@ spec:
   selector:
     app: jenkins-master
 
-```
+{code}
 
 This will tell kubernetes to how to access the pod defined in our deployment. nodePort is what the service takes in traffic on and targetPort is the port exposed on the container. We open up port 8080 for incoming traffic and 50000 for communication with the jenkins-slaves instances. When we go to hit the Jenkins URL within minikube, we will use port 30000. Incoming traffic on the node flows from port 30000 to 8080 on the jenkins-master container.
 Kubernetes ClusterRole
 
-Last, but certainly not least we have to give some permissions to the default serviceAccount we added to our deployment. Let’s run the following command `vi jenkins-master-role.yaml` and paste the following…
+Last, but certainly not least we have to give some permissions to the default serviceAccount we added to our deployment. Let’s run the following command {{vi jenkins-master-role.yaml}} and paste the following…
 
-```yaml
+{code:yaml}
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -228,11 +228,11 @@ rules:
     resources: ["secrets"]
     verbs: ["get"]
 
-```
+{code}
 
 This role will allow our jenkins-master to provision slaves via the Kubernetes API. The apiGroups: [""] refers to the core API group. Next, vi jenkins-master-role-binding.yaml and paste in the following…
 
-```yaml
+{code:yaml}
 
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -247,14 +247,13 @@ roleRef:
   name: service-reader
   apiGroup: rbac.authorization.k8s.io.
 
-```
+{code}
 
-This will bind our new ClusterRole service-reader to the default service account listed in our `jenkins-master-deployment.yaml`.
+This will bind our new ClusterRole service-reader to the default service account listed in our {{jenkins-master-deployment.yaml}}.
 
-Create persistent volume and persistent volume claims `vi volumes.yaml`.
+Create persistent volume and persistent volume claims {{vi volumes.yaml}}.
 
-```yaml
----
+h2. {code:yaml}
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -272,8 +271,7 @@ spec:
   hostPath:
     path: "/data/jenkins_home"
     #type: DirectoryOrCreate
-
----
+h2. 
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
@@ -288,23 +286,23 @@ spec:
     requests:
       storage: 10Gi
 
-```
+{code}
 
-### Deploy Jenkins and Test
+h3. Deploy Jenkins and Test
 
 Theres no more to do! Time to deploy to the K8s baby!
 
-`kubectl apply -f .`
+{{kubectl apply -f .}}
 
 You should see the following output to confirm the success.
 
-```
+{code}
 deployment.apps/jenkins-master created
 clusterrolebinding.rbac.authorization.k8s.io/service-reader-pod created
 clusterrole.rbac.authorization.k8s.io/service-reader created
 service/jenkins-master created
 
-```
+{code}
 
 If so, mega congrats! We are almost there.
 
@@ -316,7 +314,7 @@ This should get you to the Jenkins UI. From here we will click on “create new 
 
 On the left hand side click on configure and scroll down to the pipeline groovy editor and paste the following snippet.
 
-```groovy
+{code:groovy}
 
 def POD_LABEL = "testpod"
 podTemplate(label:POD_LABEL, cloud: "jenkins-master", containers: [
@@ -331,36 +329,36 @@ podTemplate(label:POD_LABEL, cloud: "jenkins-master", containers: [
     }
 }
 
-```
+{code}
 
 Save and click “Build Now”, then navigate “Back to Dashboard” [1b], [2b], [3b], [6b], [7b], [8b], [9b].
 
 
-## How to Setup Prometheus Monitoring On Kubernetes Cluster
+h2. How to Setup Prometheus Monitoring On Kubernetes Cluster
 
 Let’s get started with the setup.
 Create a Namespace & ClusterRole
 
 First, we will create a Kubernetes namespace for all our monitoring components. If you don’t create a dedicated namespace, all the Prometheus kubernetes deployment objects get deployed on the default namespace.
 
-Create a new namespace named monitoring `vi prometheus-ns.yaml`
+Create a new namespace named monitoring {{vi prometheus-ns.yaml}}
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Namespace
 metadata:
   name: monitoring
 
-```
+{code}
 
 Prometheus uses Kubernetes APIs to read all the available metrics from Nodes, Pods, Deployments, etc. For this reason, we need to create an RBAC policy with read access to required API groups and bind the policy to the monitoring namespace.
 
-Create a file named `clusterRole.yaml` and copy the following RBAC role.
+Create a file named {{clusterRole.yaml}} and copy the following RBAC role.
 
 In the role, given below, you can see that we have added get, list, and watch permissions to nodes, services endpoints, pods, and ingresses. The role binding is bound to the monitoring namespace. If you have any use case to retrieve metrics from any other object, you need to add that in this cluster role.
 
-```yaml
+{code:yaml}
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -381,8 +379,7 @@ rules:
   - ingresses
   verbs: ["get", "list", "watch"]
 - nonResourceURLs: ["/metrics"]
-  verbs: ["get"]
----
+h2.   verbs: ["get"]
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -396,26 +393,26 @@ subjects:
   name: default
   namespace: monitoring
 
-```
+{code}
 
 Create the role using the following command.
 
-`kubectl create -f clusterRole.yaml`
+{{kubectl create -f clusterRole.yaml}}
 
 Create a Config Map To Externalize Prometheus Configurations
 
 All configurations for Prometheus are part of prometheus.yaml file and all the alert rules for Alertmanager are configured in prometheus.rules.
 
-`prometheus.yml`: This is the main Prometheus configuration which holds all the scrape configs, service discovery details, storage locations, data retention configs, etc)
+{{prometheus.yml}}: This is the main Prometheus configuration which holds all the scrape configs, service discovery details, storage locations, data retention configs, etc)
 prometheus.rules: This file contains all the Prometheus alerting rules
 
 By externalizing Prometheus configs to a Kubernetes config map, you don’t have to build the Prometheus image whenever you need to add or remove a configuration. You need to update the config map and restart the Prometheus pods to apply the new configuration.
 
 The config map with all the Prometheus scrape config and alerting rules gets mounted to the Prometheus container in /etc/prometheus location as prometheus.yaml and prometheus.rules files.
 
-Create a file called `config-map.yaml`.
+Create a file called {{config-map.yaml}}.
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: ConfigMap
@@ -582,24 +579,24 @@ data:
           action: replace
           target_label: kubernetes_name
 
-```
+{code}
 
 Execute the following command to create the config map in Kubernetes.
 
-`kubectl create -f config-map.yaml`
+{{kubectl create -f config-map.yaml}}
 
 It creates two files inside the container.
 
 Note: In Prometheus terms, the config for collecting metrics from a collection of endpoints is called a job. 
 
 The prometheus.yml contains all the configurations to discover pods and services running in the Kubernetes cluster dynamically. We have the following scrape jobs in our Prometheus scrape configuration.
-```YAML
+{code:YAML}
     kubernetes-apiservers: It gets all the metrics from the API servers.
     kubernetes-nodes: It collects all the kubernetes node metrics.
     kubernetes-pods: All the pod metrics get discovered if the pod metadata is annotated with prometheus.io/scrape and prometheus.io/port annotations.
     kubernetes-cadvisor: Collects all cAdvisor metrics.
     kubernetes-service-endpoints: All the Service endpoints are scrapped if the service metadata is annotated with prometheus.io/scrape and prometheus.io/port annotations. It can be used for black-box monitoring.
-```
+{code}
 prometheus.rules contains all the alert rules for sending alerts to the Alertmanager.
 
 Create a Prometheus Deployment
@@ -608,7 +605,7 @@ Create a file named prometheus-deployment.yaml and copy the following contents o
 
 Note: This deployment uses the latest official Prometheus image from the docker hub. Also, we are not using any persistent storage volumes for Prometheus storage as it is a basic setup. When setting up Prometheus for production uses cases, make sure you add persistent storage to the deployment.
 
-```yaml
+{code:yaml}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -649,15 +646,15 @@ spec:
         - name: prometheus-storage-volume
           emptyDir: {}
 
-```
+{code}
 
 Create a deployment on monitoring namespace using the above file.
 
-`kubectl create  -f prometheus-deployment.yaml `
+{{kubectl create  -f prometheus-deployment.yaml }}
 
 You can check the created deployment using the following command.
 
-`kubectl get deployments --namespace=monitoring`
+{{kubectl get deployments --namespace=monitoring}}
 
 
 You can view the deployed Prometheus dashboard in three different ways.
@@ -671,7 +668,7 @@ Create a file named prometheus-service.yaml and copy the following contents. We 
 
 Note: If you are on AWS, Azure, or Google Cloud, You can use Loadbalancer type, which will create a load balancer and automatically points it to the Kubernetes service endpoint.
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Service
@@ -691,29 +688,29 @@ spec:
       targetPort: 9090 
       nodePort: 32000
 
-```
+{code}
 
 The annotations in the above service YAML makes sure that the service endpoint is scrapped by Prometheus. The prometheus.io/port should always be the target port mentioned in service YAML
 
 Create the service using the following command.
 
-`kubectl create -f prometheus-service.yaml --namespace=monitoring`
+{{kubectl create -f prometheus-service.yaml --namespace=monitoring}}
 
 Step 3: Once created, you can access the Prometheus dashboard using any of the Kubernetes nodes IP on port 30000. If you are on the cloud, make sure you have the right firewall rules to access port 30000 from your workstation [4b], [5b].
 
-## How To Setup Grafana On Kubernetes
+h2. How To Setup Grafana On Kubernetes
 
 Let’s look at the Grafana setup in detail.
 
-Create file named `grafana-datasource-config.yaml`
+Create file named {{grafana-datasource-config.yaml}}
 
-`vi grafana-datasource-config.yaml`
+{{vi grafana-datasource-config.yaml}}
 
 Copy the following contents.
 
 Note: The following data source configuration is for Prometheus. If you have more data sources, you can add more data sources with different YAMLs under the data section.
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: ConfigMap
@@ -737,19 +734,19 @@ data:
         ]
     }
 
-  ```
+  {code}
 
 Create the configmap using the following command.
 
-`kubectl create -f grafana-datasource-config.yaml`
+{{kubectl create -f grafana-datasource-config.yaml}}
 
-Create a file named `deployment.yaml`
+Create a file named {{deployment.yaml}}
 
-`vi deployment.yaml`
+{{vi deployment.yaml}}
 
 Copy the following contents on the file.
 
-```yaml
+{code:yaml}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -794,21 +791,21 @@ spec:
               defaultMode: 420
               name: grafana-datasources
 
-  ```
+  {code}
 
 Note: This Grafana deployment does not use a persistent volume. If you restart the pod all changes will be gone. Use a persistent volume if you are deploying Grafana for your project requirements. It will persist all the configs and data that Grafana uses.
 
 Create the deployment
 
-`kubectl create -f deployment.yaml`
+{{kubectl create -f deployment.yaml}}
 
-Create a service file named `service.yaml`
+Create a service file named {{service.yaml}}
 
-`vi service.yaml`
+{{vi service.yaml}}
 
 Copy the following contents. This will expose Grafana on NodePort 32000. You can also expose it using ingress or a Loadbalancer based on your requirement.
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Service
@@ -827,15 +824,15 @@ spec:
       targetPort: 3000
       nodePort: 32500
 
-```
+{code}
 
 Create the service.
 
-`kubectl create -f service.yaml`
+{{kubectl create -f service.yaml}}
 
 Now you should be able to access the Grafana dashboard using any node IP on port 32500. Make sure the port is allowed in the firewall to be accessed from your workstation.
 
-http://<your-node-ip>:32500
+http://[your-node-ip]:32500
 
 
 
@@ -844,52 +841,52 @@ Use the following default username and password to log in. Once you log in with 
 User: admin
 Pass: admin
 
-![graphana password](./img/graphana_password.png)
+![graphana password|./img/graphana_password.png]
 
 
-### Setup Kubernetes Jenkins monitoring on Grafana
+h3. Setup Kubernetes Jenkins monitoring on Grafana
 
 Step 1: Create data source for Prometheus.
 
-![graphana add data source](./img/graphana_add_data_source.png)
+![graphana add data source|./img/graphana_add_data_source.png]
 
 Step 2: Enter Jenkins IP 
 
-![datasource prometheus](./img/datasource_prometheus.png)
+![datasource prometheus|./img/datasource_prometheus.png]
 
 Step 4: Enter the dashboard ID: 9964. Grafana will automatically fetch the template from Grafana website. 
 
-![import dashboard](./img/import_dashboard.png)
+![import dashboard|./img/import_dashboard.png]
 
 You should see the dashboard immediately [11b].
 
-![jenkins graphana dashboard](./img/jenkins_graphana_dasboard.png)
+![jenkins graphana dashboard|./img/jenkins_graphana_dasboard.png]
 
 
 
-## Deploy an Elasticsearch cluster
+h2. Deploy an Elasticsearch cluster
 
 Apply a simple Elasticsearch cluster specification, with one Elasticsearch node:
 
 If your Kubernetes cluster does not have any Kubernetes nodes with at least 2GiB of free memory, the pod will be stuck in Pending state. See Manage compute resources for more information about resource requirements and how to configure them.
 
-Create namespace logging. `vi elk-ns.yaml`
+Create namespace logging. {{vi elk-ns.yaml}}
 
-```yaml
+{code:yaml}
 apiVersion: v1
 kind: Namespace
 metadata:
   name: logging
 
-```
+{code}
 
-Run command: `kubectl create -f elk-ns.yaml`
+Run command: {{kubectl create -f elk-ns.yaml}}
 
 We’ll start with Elasticsearch [45b], [46b], [47b].
 
-`vi elastic.yaml`
+{{vi elastic.yaml}}
 
-```yaml
+{code:yaml}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -921,8 +918,7 @@ spec:
           requests:
             cpu: 500m
             memory: 2Gi
-
----
+h2. 
 
 apiVersion: v1
 kind: Service
@@ -939,20 +935,20 @@ spec:
     targetPort: 9200
     nodePort: 30920
 
-```
+{code}
 
-`kubectl create -f elastic.yaml -n logging`
+{{kubectl create -f elastic.yaml -n logging}}
 
-`kubectl get pods -n logging`
+{{kubectl get pods -n logging}}
 
-`kubectl get service -n logging`
+{{kubectl get service -n logging}}
 
 Next, let’s get Kibana up and running. [45b], [46b], [47b]
 
-`vi kibana.yaml`
+{{vi kibana.yaml}}
 
 
-```yaml
+{code:yaml}
 
 apiVersion: apps/v1
 kind: Deployment
@@ -979,8 +975,7 @@ spec:
         - containerPort: 5601
           name: http
           protocol: TCP
-
----
+h2. 
 
 apiVersion: v1
 kind: Service
@@ -997,31 +992,31 @@ spec:
     targetPort: 5601
     nodePort: 30601
 
-```
+{code}
 
-`kubectl create -f kibana.yaml -n logging`
+{{kubectl create -f kibana.yaml -n logging}}
 
-`kubectl get pods -n logging`
+{{kubectl get pods -n logging}}
 
-`kubectl get service -n logging`
+{{kubectl get service -n logging}}
 
 
-## Monitor Jenkins Application Logs using ELK Stack
+h2. Monitor Jenkins Application Logs using ELK Stack
 
 We will use ELK Stack (Elasticsearch, Logstash, and Kibana) and Filebeat, to ship logs from the Jenkins server and create a fancy dashboard to visualize them in real-time. Below is the architecture of what we want to achieve.
 
-![architecture elk monitoring](./img/architecture_elk_monitoring.png)
+![architecture elk monitoring|./img/architecture_elk_monitoring.png]
 
-    *  **Beats**: We will use Metricbeat, to ship the Jenkins Application Logs located at the path /var/log/jenkins/jenkins.log for Linux based machines.
+*** *Beats*: We will use Metricbeat, to ship the Jenkins Application Logs located at the path /var/log/jenkins/jenkins.log for Linux based machines.
 
-    *  **Logstash**: Logstash will ingest the logs sent from Metricbeat and parse the logs, dynamically transform data irrespective of format and complexity, using different filter plugins.
+*** *Logstash*: Logstash will ingest the logs sent from Metricbeat and parse the logs, dynamically transform data irrespective of format and complexity, using different filter plugins.
 
-    *  **Elasticsearch**: Elasticsearch will store the parsed logs sent from Logstash and index it in a way that supports fast searches. It provides real-time search and analytics of all types of data.
+*** *Elasticsearch*: Elasticsearch will store the parsed logs sent from Logstash and index it in a way that supports fast searches. It provides real-time search and analytics of all types of data.
 
-    *  **Kibana**: Kibana uses Elasticsearch as a data source to visualize data. It has a rich source of different visualization like charts, graphs, GeoIP Map, etc. It can be referred to as a search dashboard for Elasticsearch.
+*** *Kibana*: Kibana uses Elasticsearch as a data source to visualize data. It has a rich source of different visualization like charts, graphs, GeoIP Map, etc. It can be referred to as a search dashboard for Elasticsearch.
 
 
-### Configuring Logstash
+h3. Configuring Logstash
 
 Logstash process events in three stages: input → filter → output. In this case,
 
@@ -1029,9 +1024,9 @@ Logstash process events in three stages: input → filter → output. In this ca
     filter: used grok, date, and mutate filter plugins to filter and process logs
     output: store the processed logs in elasticsearch
 
-Create file `vi logstash-deployment.yaml` [43b], [44b].
+Create file {{vi logstash-deployment.yaml}} [43b], [44b].
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: ConfigMap
@@ -1064,9 +1059,9 @@ data:
         mutate {
           join => ["@message", "\n"]
         }
-    # split @message into __date and __msg, and overwrite the @timestamp value.
+    # split @message into *date and *msg, and overwrite the @timestamp value.
       grok {
-          match => [ "@message", "^(?<__date>%{MONTH} %{MONTHDAY}, %{YEAR} %{TIME} (AM|PM)) (?<__msg>.+)" ]
+          match => [ "@message", "^(?[*date]%{MONTH} %{MONTHDAY}, %{YEAR} %{TIME} (AM|PM)) (?[*msg].+)" ]
       }
       date {
           match  => [ "__date", "MMM dd, YYYY HH:mm:ss a"]
@@ -1074,7 +1069,7 @@ data:
     # ...now some patterns to categorize specific event types...
     # parse build completion messages, adding the jenkins_* fields and the 'build' tag
       grok {
-          match => [ "@message", "(?<jenkins_job>\S+) #(?<jenkins_build_number>\d+) (?<__msg>.+): (?<jenkins_build_status>\w+)" ]
+          match => [ "@message", "(?[jenkins_job]\S+) #(?[jenkins_build_number]\d+) (?[__msg].+): (?[jenkins_build_status]\w+)" ]
           tag_on_failure => []
           overwrite => true
           add_tag => ['build']
@@ -1132,8 +1127,7 @@ data:
     # use this if you want to verify logs are being sent to elasticsearch or not
  
     #stdout { codec => rubydebug }
-    }
----
+h2.     }
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -1171,8 +1165,7 @@ spec:
           name: logstash-configmap
           items:
             - key: logstash.conf
-              path: logstash.conf
----
+h2.               path: logstash.conf
 kind: Service
 apiVersion: v1
 metadata:
@@ -1187,18 +1180,17 @@ spec:
     targetPort: 5044
   type: ClusterIP
 
-```
+{code}
 
 
-### Configuring Metricbeat
+h3. Configuring Metricbeat
 
 Metricbeat is a lightweight logs shipper. It is installed as an agent on your servers (i.e. Jenkins server) which will monitor the Jenkins log file, collect events, and ships to Logstash for parsing [43b], [45b]. 
 
 
-Below is the file `vi metricbeat-kubernetes.yaml`
+Below is the file {{vi metricbeat-kubernetes.yaml}}
 
-```yaml
----
+h2. ``{{yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1213,7 +1205,7 @@ data:
     setup.kibana.host: "http://minikube_ip:30601"                 
     ##############################
     metricbeat.config.modules:
-      # Mounted `metricbeat-daemonset-modules` configmap:
+      # Mounted }}metricbeat-daemonset-modules{{ configmap:
       path: ${path.config}/modules.d/*.yml
       # Reload module configs as they change:
       reload.enabled: false
@@ -1275,7 +1267,7 @@ data:
       enabled: true
       paths:
         - /var/log/jenkins/jenkins.log
-        - var/lib/jenkins/jobs/*/builds/*/log
+        - var/lib/jenkins/jobs/_/builds/_/log
       exclude_files: ['.gz$']
       multiline.pattern: '^[a-zA-Z]+\s[0-9]{1,2},\s[0-9]{4}\s[0-9]{1,2}:[0-9]{1,2}:[0-9]{1,2}\s(?:AM|am|PM|pm)'
       multiline.negate: true
@@ -1296,8 +1288,7 @@ data:
       - add_host_metadata: ~
       - add_cloud_metadata: ~
 
-
----
+h2. 
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -1348,15 +1339,14 @@ data:
       # remove ssl.verification_mode entry and use the CA, for instance:
       #ssl.certificate_authorities:
         #- /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
-    # Currently `proxy` metricset is not supported on Openshift, comment out section
+    # Currently }}proxy{{ metricset is not supported on Openshift, comment out section
     - module: kubernetes
       metricsets:
         - proxy
       period: 10s
       host: ${NODE_NAME}
-      hosts: ["localhost:10249"]
----
-# Deploy a Metricbeat instance per node for node metrics retrieval
+h2.       hosts: ["localhost:10249"]
+h1. Deploy a Metricbeat instance per node for node metrics retrieval
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -1447,8 +1437,7 @@ spec:
         hostPath:
           # When metricbeat runs as non-root user, this directory needs to be writable by group (g+w)
           path: /var/lib/metricbeat-data
-          type: DirectoryOrCreate
----
+h2.           type: DirectoryOrCreate
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -1460,8 +1449,7 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: metricbeat
-  apiGroup: rbac.authorization.k8s.io
----
+h2.   apiGroup: rbac.authorization.k8s.io
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -1474,8 +1462,7 @@ subjects:
 roleRef:
   kind: Role
   name: metricbeat
-  apiGroup: rbac.authorization.k8s.io
----
+h2.   apiGroup: rbac.authorization.k8s.io
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -1488,8 +1475,7 @@ subjects:
 roleRef:
   kind: Role
   name: metricbeat-kubeadm-config
-  apiGroup: rbac.authorization.k8s.io
----
+h2.   apiGroup: rbac.authorization.k8s.io
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -1505,11 +1491,11 @@ rules:
   - pods
   - services
   verbs: ["get", "list", "watch"]
-# Enable this rule only if planing to use Kubernetes keystore
-#- apiGroups: [""]
-#  resources:
-#  - secrets
-#  verbs: ["get"]
+h1. Enable this rule only if planing to use Kubernetes keystore
+h1.- apiGroups: [""]
+h1.  resources:
+h1.  - secrets
+h1.  verbs: ["get"]
 - apiGroups: ["extensions"]
   resources:
   - replicasets
@@ -1533,8 +1519,7 @@ rules:
 - nonResourceURLs:
   - "/metrics"
   verbs:
-  - get
----
+h2.   - get
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -1548,8 +1533,7 @@ rules:
       - coordination.k8s.io
     resources:
       - leases
-    verbs: ["get", "create", "update"]
----
+h2.     verbs: ["get", "create", "update"]
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -1563,19 +1547,17 @@ rules:
       - configmaps
     resourceNames:
       - kubeadm-config
-    verbs: ["get"]
----
+h2.     verbs: ["get"]
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: metricbeat
   namespace: logging
   labels:
-    k8s-app: metricbeat
----
+h2.     k8s-app: metricbeat
 
-```
-### Configuring Jenkins
+{code}
+h3. Configuring Jenkins
 
 Configure Logstash Plugin in Jenkins System Configuration.
 
@@ -1584,7 +1566,7 @@ Configure Logstash Plugin in Jenkins System Configuration.
 
 Test Jenkins Logstash plugin. Create Jenkins Pipeline Job and run declarative pipeline:
 
-```groovy
+{code}groovy
 
 pipeline{
     agent none
@@ -1611,47 +1593,47 @@ pipeline{
     }
 }
 
-```
+{code}
 
 
-### Configuring Elasticsearch
+h3. Configuring Elasticsearch
 
 Elasticsearch will store and process the data in jenkins-%{+YYYY.MM.dd}the index. We will not change the default configuration of elasticsearch, which was configured during elasticsearch installation.
 
-### Configuring Kibana
+h3. Configuring Kibana
 
 Kibana is used to visualize and analyze the data stored in elasticsearch indices. We will use jenkins-%{+YYYY.MM.dd}the index to visualize the Jenkins build logs and create different fancy visualizations and combine visualizations in one dashboard. We need to create Index Pattern in Kibana first to create visualizations and dashboards.
 
 Steps to create Index Pattern in Kibana:
 
-    1. Login to Kibana (default: http://MINIKUBE_IP:KIBANA_PORT)
-    2. Go to Settings → Kibana → Index Patterns
-    3. Click on Create Index Pattern. Define an Index pattern (say jenkins-*)
-    4. You will be able to see all the Jenkins indices will get listed. Then, click on the Next step.
-    5. Choose the time filter (say @timestamp). Then, click on the Create index pattern [43b], [45b].
+### Login to Kibana (default: http://MINIKUBE_IP:KIBANA_PORT)
+### Go to Settings → Kibana → Index Patterns
+### Click on Create Index Pattern. Define an Index pattern (say jenkins-*)
+### You will be able to see all the Jenkins indices will get listed. Then, click on the Next step.
+### Choose the time filter (say @timestamp). Then, click on the Create index pattern [43b], [45b].
 
-### Metricbeat install dashboard
+h3. Metricbeat install dashboard
 
-File ***metricbeat.yml*** must have next strings:
+File _*metricbeat.yml*_ must have next strings:
 
-```yaml
+{code}yaml
 setup.dashboards.enabled: true 
 setup.dashboard.beat: metricbeat
 setup.kibana.host: "http://MINIKUBE_IP:30601" 
 
-``` 
+}}`{{ 
 
 Run command:
 
-`kubectl exec -it metricbeat-pod -n logging  -- /bin/sh`
+}}kubectl exec -it metricbeat-pod -n logging  -- /bin/sh{{
 
 Install dashboard to metricbeat pod: 
 
-`./metricbeat setup -E setup.kibana.host=MINIKUBE_IP:30601`
+}}./metricbeat setup -E setup.kibana.host=MINIKUBE_IP:30601`
 
-## K6 Load Tests
+h2. K6 Load Tests
 
-### K6 Export Results to JUnit with Jenkins Shared Library
+h3. K6 Export Results to JUnit with Jenkins Shared Library
 
 When a test file is run on K6, it returns a JSON response stating the Type, Data, Values, Timestamp, Metrics etc expected from a Load Testing Tool. The JSON results are outputted as single lines for each metric or point. In order to parse this for our Groovy script, it is crucial to understand the structure of the JSON results.
 
@@ -1659,7 +1641,7 @@ In our script, we use JsonSlurper to parse the JSON result line by line. We filt
 
 We map the Groups to the objects TestSuite, TestClass, TestCase. The obtained data-model is outputted in the JUnit XML format [19b].
 
-```groovy
+{code:groovy}
 
 // Sample Test Group Heirarchy
 group("Inventory Tests", function () { 
@@ -1670,10 +1652,10 @@ group("Inventory Tests", function () {
       });
 });
 
-```
-***k6JsonToJunitXml.groovy***:
+{code}
+_*k6JsonToJunitXml.groovy*_:
 
-```groovy
+{code:groovy}
 
 import groovy.json.JsonSlurper
 import groovy.xml.*
@@ -1690,7 +1672,7 @@ def process(String inputFilePath, String outputFilePath) {
     int totalTestsCount = 0, totalPassesCount = 0,    totalFailuresCount = 0
 
     def jsonSlurper = new JsonSlurper()
-    def testSuites = new HashSet<TestSuite>()
+    def testSuites = new HashSet[TestSuite]()
 
     new File(inputFilePath).eachLine { line ->
         // Read input file line by line
@@ -1759,7 +1741,7 @@ def printXml(testSuites, outputFilePath){
 
 
     def outputFile = new File(outputFilePath).newWriter()
-    outputFile << XmlUtil.serialize(testsuitesPrint)
+    outputFile [< XmlUtil.serialize(testsuitesPrint)
     outputFile.close()
 }
 
@@ -1779,9 +1761,9 @@ def nameSplitter(stringInput) {
         result.testSuiteName = parsedNames[0]
         result.testClassName = parsedNames[1]
         result.testCaseName = parsedNames[1]
-    } else if (size > 2) {
+    } else if (size ] 2) {
         StringBuffer testCaseName = new StringBuffer()
-        for (i = 2; i < size; i++) {
+        for (i = 2; i [ size; i++) {
             testCaseName.append(parsedNames[i])
         }
         result.testSuiteName = parsedNames[0]
@@ -1820,7 +1802,7 @@ public class TestSuite {
     String name
     int failuresCount
     int testCount = 0
-    def testCases = new HashSet<TestCase>()
+    def testCases = new HashSet<TestCase]()
 
     @Override
     @NonCPS
@@ -1860,20 +1842,20 @@ public class TestCase {
     }
 }
 
-```
+{code}
 
 Pipeline has support for creating “Shared Libraries” which can be defined in external source control repositories and loaded into existing Pipelines.
 
 The script can be added in the pipeline as a step after the tests have been run to convert the json result file into junit xml.
 
-```groovy
+{code:groovy}
 
 //K6 has to be run using this parameter
-"out json=<test_result.json>”
+"out json=[test_result.json]”
 
-```
+{code}
 
-```groovy
+{code:groovy}
 
 The scripts can be imported as a Library and can be called like this:
 
@@ -1890,7 +1872,7 @@ node {
     }
 }
 
-```
+{code}
 
 The script can also be used for different types of tests besides API Integration Tests and can be customized to output different types of metrics or even add metrics which are currently not provided by K6 [19b].
 
@@ -1900,7 +1882,7 @@ Configure Jenkins Shared Library in Web Interface
 
 New version of K6 has function for custom output.
 
-```javascript
+{code:javascript}
 
 export function handleSummary(data) {
 
@@ -1934,9 +1916,9 @@ export function handleSummary(data) {
 
 }
 
-```
+{code}
 
-## Dynamic Pod Tests with K6
+h2. Dynamic Pod Tests with K6
 
 Performance tests are a necessary and crucial part of all services in LINE, which ensures that software applications will perform well under the expected workload. Whenever features which may affect overall user experience are implemented, performance testing is executed as a part of the testing plan.
 
@@ -1944,32 +1926,32 @@ But setting up and maintaining a performance test environment is not always easy
 
 * Server load criteria varies between features, component, and events
 
-    * According to different performance criteria of features implemented on different components or sometimes event scales, the RPS (request per second) varies a lot. And most open source performance tools do not have features to control multiple test executors and help you to consolidate reports from each of them. Thus testers needs to perform steps manually and multiple try runs to find out the right scale machine to run the performance test scripts. These steps require allocating  new machines, installing necessary libraries, uploading scripts, and doing some try runs to make sure scripts can generate necessary workloads without over exhausting the test machine itself.
+*** According to different performance criteria of features implemented on different components or sometimes event scales, the RPS (request per second) varies a lot. And most open source performance tools do not have features to control multiple test executors and help you to consolidate reports from each of them. Thus testers needs to perform steps manually and multiple try runs to find out the right scale machine to run the performance test scripts. These steps require allocating  new machines, installing necessary libraries, uploading scripts, and doing some try runs to make sure scripts can generate necessary workloads without over exhausting the test machine itself.
 
 * Each service or team maintains its own performance test environment
 
-    * Due to the reasons such as workload criteria and release schedule, each team or service here in Taiwan maintain their own set of performance test environments, which includes some workload machines, an Influx DB, and Grafana dashboard machines. These servers are quite identical in functionalities but the setting up and maintaining a set of these servers by each team is very cumbersome and not very good for the developer experience.
+*** Due to the reasons such as workload criteria and release schedule, each team or service here in Taiwan maintain their own set of performance test environments, which includes some workload machines, an Influx DB, and Grafana dashboard machines. These servers are quite identical in functionalities but the setting up and maintaining a set of these servers by each team is very cumbersome and not very good for the developer experience.
 
 * Machine utilization is very low
 
-    * Large scale performance tests like these are not required to be executed frequently and most of the time are considered when new features are implemented or there are changes to architecture. Each team having their own set of servers allocated for these infrequent workloads makes server utilization very low, but still it requires maintenance resources from time to time.
+*** Large scale performance tests like these are not required to be executed frequently and most of the time are considered when new features are implemented or there are changes to architecture. Each team having their own set of servers allocated for these infrequent workloads makes server utilization very low, but still it requires maintenance resources from time to time.
 
 * Lack of a centralized monitoring dashboard
 
-    * Performance tests require monitoring test executor resources and server sides resources all together at the same time. In the past, an engineer would open multiple terminal consoles in a desktop window and issues commands to monitor CPU, memory, disk, and network IO from there. These are not convenient to setup nor easy to preserve records from test executions.
+*** Performance tests require monitoring test executor resources and server sides resources all together at the same time. In the past, an engineer would open multiple terminal consoles in a desktop window and issues commands to monitor CPU, memory, disk, and network IO from there. These are not convenient to setup nor easy to preserve records from test executions.
 
 
 So, in the following sections, we are going to show you how to leverage dynamic resource management from the Jenkins Kubernetes plugin to solve the problems highlighted above.
 
 In LINE Taiwan, most of the time we use k6 as our load testing tool, so the setup below is based on this scenario, but should be the same for other tools as well.
 
-### Architecture diagram
+h3. Architecture diagram
 
 The idea here is to prepare a platform that uses the Kubernetes plugin for Jenkins which allows each team to run their performance (k6) test scripts without worrying about underlying infrastructure setup and maintenance.
 
 The platform can evenly distribute workloads across all available nodes in the cluster to better simulate real-world scenarios without stressing computing resources and network bandwidth on a single machine. 
 
-![Jenkins Kubernetes Dynamic Pods Architecture](./img/Dynamically-add-pod-to-run-performance-test-Copy-1-1024x643.png )
+![Jenkins Kubernetes Dynamic Pods Architecture|./img/Dynamically-add-pod-to-run-performance-test-Copy-1-1024x643.png ]
 
 
 For each team that wants to use the platform, the following attributes are provided as necessary:
@@ -1978,26 +1960,26 @@ For each team that wants to use the platform, the following attributes are provi
     GIT_RAW_FILE: Your k6 performance script in raw format in your version control server
     DURATION and VIRTUAL_USER: Check the definition of duration and VUs in the official k6 documentation [23b].
 
-    ![build parameters](img/image2020-12-28_17-6-1.png)
+    ![build parameters|img/image2020-12-28_17-6-1.png]
 
 
-### Jenkins pipeline for dynamic pods    
+h3. Jenkins pipeline for dynamic pods    
     
-Custom ***Dockerfile*** for K6 with Prometheus extension [27b], [28b], [29b].
+Custom _*Dockerfile*_ for K6 with Prometheus extension [27b], [28b], [29b].
 
 
 
-```Dockerfile
+{code:Dockerfile}
 
-#https://community.k6.io/t/how-do-i-install-extensions-when-im-running-the-k6-docker-image/2050/3
+h1.https://community.k6.io/t/how-do-i-install-extensions-when-im-running-the-k6-docker-image/2050/3
 FROM golang:1.16-alpine as builder
 WORKDIR $GOPATH/src/go.k6.io/k6
 ADD . .
 RUN apk --no-cache add git
-# it' s work but deprecated
+h1. it' s work but deprecated
 RUN go get go.k6.io/k6 
-#RUN CGO_ENABLED=0 go install -a -trimpath -ldflags "-s -w -X go.k6.io/k6/lib/consts.VersionDetails=$(date -u +"%FT%T%z")/$(git describe --always --long --dirty)" 
-#RUN go install -trimpath github.com/k6io/xk6/cmd/xk6@latest
+h1.RUN CGO_ENABLED=0 go install -a -trimpath -ldflags "-s -w -X go.k6.io/k6/lib/consts.VersionDetails=$(date -u +"%FT%T%z")/$(git describe --always --long --dirty)" 
+h1.RUN go install -trimpath github.com/k6io/xk6/cmd/xk6@latest
 RUN go install go.k6.io/xk6/cmd/xk6@latest
 RUN xk6 build --with github.com/avitalique/xk6-file@latest 
 RUN xk6 build --with github.com/grafana/xk6-output-prometheus-remote 
@@ -2010,14 +1992,14 @@ RUN apk add --no-cache ca-certificates && \
     adduser -D -u 12345 -g 12345 k6
 COPY --from=builder /go/bin/k6 /usr/bin/k6
 
-#no volumes because I initiate those in docker-compose separately, this is just for image
+h1.no volumes because I initiate those in docker-compose separately, this is just for image
 USER 12345
 ENTRYPOINT ["k6"]
 
-````
-***Jenkinsfile***
+{code}
+_*Jenkinsfile*_
 
-```groovy
+{code:groovy}
 
 @Library('k6jkmonitoring')_
 properties([pipelineTriggers([githubPush()])])
@@ -2056,7 +2038,7 @@ pipeline {
           echo "Pods count: ${params.POD_COUNT}"
           echo "VUs: ${params.VIRTUAL_USER}"
           echo "Duration: ${params.DURATION}"
-          for (int i = 0; i < params.POD_COUNT.toInteger(); i++) {
+          for (int i = 0; i [ params.POD_COUNT.toInteger(); i++) {
             stages[i] = {
               node('k6node') {
                 stage("Stage-${i}") {
@@ -2102,10 +2084,10 @@ pipeline {
 }
 
 
-```
+{code}
 
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Pod
@@ -2143,11 +2125,11 @@ spec:
       runAsUser: 0
 
 
-```
+{code}
 
 Sidecar container for export K6 metrics to Prometheus.
 
-```yaml
+{code:yaml}
 
 apiVersion: v1
 kind: Pod
@@ -2196,11 +2178,11 @@ spec:
       - containerPort: 2112    
 
 
-```
+{code}
 
 Simple K6 Java Script test from [k6io] (https://k6.io/docs/getting-started/running-k6/).
 
-```javascript
+{code:javascript}
 
 import http from 'k6/http';
 
@@ -2215,10 +2197,10 @@ export default function () {
 
 }
 
-```
-### Configure Jenkins Kubernetes Cloud
+{code}
+h3. Configure Jenkins Kubernetes Cloud
 
-Choose Manage Jenkins -> Manage Nodes and Clouds
+Choose Manage Jenkins -] Manage Nodes and Clouds
 
 ![cloud-jenkins] (./img/cloud-jenkins.webp)
 
@@ -2255,149 +2237,141 @@ To show K6 testing metrics on Grafana dashboards:
 
 
 
-## Kibana Jenkins monitoring with Logstash and metricbeat
+h2. Kibana Jenkins monitoring with Logstash and metricbeat
 
 
 
 
-## Known issues
+h2. Known issues
 
-./metricbeat setup -e -E output.logstash.enabled=false \
-> -E output.elasticsearch.hosts=['192.168.49.2:30920'] \
-> -E output.elasticsearch.username=metricbeat_internal \
-> -E setup.kibana.host=192.168.49.2:30601
+Pipeline for dynamic pods is work, but skip tests.
 
-2022-01-21T11:11:40.629Z	INFO	instance/beat.go:686	Home path: [/usr/share/metricbeat] Config path: [/usr/share/metricbeat] Data path: [/usr/share/metricbeat/data] Logs path: [/usr/share/metricbeat/logs] Hostfs Path: [/]
-2022-01-21T11:11:40.629Z	INFO	instance/beat.go:694	Beat ID: 78402dfe-50ad-411b-974c-ad4f3be035b9
-2022-01-21T11:11:43.631Z	WARN	[add_cloud_metadata]	add_cloud_metadata/provider_aws_ec2.go:79	read token request for getting IMDSv2 token returns empty: Put "http://169.254.169.254/latest/api/token": context deadline exceeded (Client.Timeout exceeded while awaiting headers). No token in the metadata request will be used.
-2022-01-21T11:11:43.634Z	INFO	[beat]	instance/beat.go:1040	Beat info	{"system_info": {"beat": {"path": {"config": "/usr/share/metricbeat", "data": "/usr/share/metricbeat/data", "home": "/usr/share/metricbeat", "logs": "/usr/share/metricbeat/logs"}, "type": "metricbeat", "uuid": "78402dfe-50ad-411b-974c-ad4f3be035b9"}}}
-2022-01-21T11:11:43.637Z	INFO	[beat]	instance/beat.go:1049	Build info	{"system_info": {"build": {"commit": "3c518f4d17a15dc85bdd68a5a03d5af51d9edd8e", "libbeat": "7.16.2", "time": "2021-12-18T21:17:33.000Z", "version": "7.16.2"}}}
-2022-01-21T11:11:43.637Z	INFO	[beat]	instance/beat.go:1052	Go runtime info	{"system_info": {"go": {"os":"linux","arch":"amd64","max_procs":4,"version":"go1.17.5"}}}
-2022-01-21T11:11:43.644Z	INFO	[beat]	instance/beat.go:1056	Host info	{"system_info": {"host": {"architecture":"x86_64","boot_time":"2022-01-20T12:01:33Z","containerized":true,"name":"minikube","ip":["127.0.0.1/8","172.17.0.1/16","192.168.49.2/24"],"kernel_version":"5.11.0-46-generic","mac":["02:42:38:e2:26:09","c2:ac:2e:db:95:f5","de:fe:03:b3:50:78","02:42:c0:a8:31:02","d6:ad:d4:41:09:de","4a:2b:de:ee:b0:6a","be:32:2d:bc:36:c0","c6:cf:b3:4f:bf:64","da:82:75:85:d9:a4"],"os":{"type":"linux","family":"redhat","platform":"centos","name":"CentOS Linux","version":"7 (Core)","major":7,"minor":9,"patch":2009,"codename":"Core"},"timezone":"UTC","timezone_offset_sec":0,"id":"3f32d840a842c18987b8981697cea358"}}}
-2022-01-21T11:11:43.644Z	INFO	[beat]	instance/beat.go:1085	Process info	{"system_info": {"process": {"capabilities": {"inheritable":["chown","dac_override","fowner","fsetid","kill","setgid","setuid","setpcap","net_bind_service","net_raw","sys_chroot","mknod","audit_write","setfcap"],"permitted":["chown","dac_override","fowner","fsetid","kill","setgid","setuid","setpcap","net_bind_service","net_raw","sys_chroot","mknod","audit_write","setfcap"],"effective":["chown","dac_override","fowner","fsetid","kill","setgid","setuid","setpcap","net_bind_service","net_raw","sys_chroot","mknod","audit_write","setfcap"],"bounding":["chown","dac_override","fowner","fsetid","kill","setgid","setuid","setpcap","net_bind_service","net_raw","sys_chroot","mknod","audit_write","setfcap"],"ambient":null}, "cwd": "/usr/share/metricbeat", "exe": "/usr/share/metricbeat/metricbeat", "name": "metricbeat", "pid": 59, "ppid": 17, "seccomp": {"mode":"disabled","no_new_privs":false}, "start_time": "2022-01-21T11:11:39.630Z"}}}
-2022-01-21T11:11:43.644Z	INFO	instance/beat.go:328	Setup Beat: metricbeat; Version: 7.16.2
-2022-01-21T11:11:43.644Z	INFO	[index-management]	idxmgmt/std.go:184	Set output.elasticsearch.index to 'metricbeat-7.16.2' as ILM is enabled.
-2022-01-21T11:11:43.645Z	INFO	[esclientleg]	eslegclient/connection.go:102	elasticsearch url: http://elasticsearch:9200
-2022-01-21T11:11:43.645Z	INFO	[publisher]	pipeline/module.go:113	Beat name: minikube
-2022-01-21T11:11:43.681Z	INFO	[esclientleg]	eslegclient/connection.go:102	elasticsearch url: http://elasticsearch:9200
-2022-01-21T11:11:43.685Z	INFO	[esclientleg]	eslegclient/connection.go:282	Attempting to connect to Elasticsearch version 7.16.2
-2022-01-21T11:11:43.711Z	INFO	[add_cloud_metadata]	add_cloud_metadata/add_cloud_metadata.go:101	add_cloud_metadata: hosting provider type not detected.
-2022-01-21T11:11:43.716Z	INFO	[index-management]	idxmgmt/std.go:261	Auto ILM enable success.
-2022-01-21T11:11:43.718Z	INFO	[index-management.ilm]	ilm/std.go:170	ILM policy metricbeat exists already.
-2022-01-21T11:11:43.719Z	INFO	[index-management]	idxmgmt/std.go:397	Set setup.template.name to '{metricbeat-7.16.2 {now/d}-000001}' as ILM is enabled.
-2022-01-21T11:11:43.719Z	INFO	[index-management]	idxmgmt/std.go:402	Set setup.template.pattern to 'metricbeat-7.16.2-*' as ILM is enabled.
-2022-01-21T11:11:43.719Z	INFO	[index-management]	idxmgmt/std.go:436	Set settings.index.lifecycle.rollover_alias in template to {metricbeat-7.16.2 {now/d}-000001} as ILM is enabled.
-2022-01-21T11:11:43.723Z	INFO	[index-management]	idxmgmt/std.go:440	Set settings.index.lifecycle.name in template to {metricbeat {"policy":{"phases":{"hot":{"actions":{"rollover":{"max_age":"30d","max_size":"50gb"}}}}}}} as ILM is enabled.
-2022-01-21T11:11:43.736Z	INFO	template/load.go:197	Existing template will be overwritten, as overwrite is enabled.
-2022-01-21T11:11:44.011Z	INFO	template/load.go:131	Try loading template metricbeat-7.16.2 to Elasticsearch
-2022-01-21T11:11:44.052Z	INFO	template/load.go:123	Template with name "metricbeat-7.16.2" loaded.
-2022-01-21T11:11:44.052Z	INFO	[index-management]	idxmgmt/std.go:297	Loaded index template.
-2022-01-21T11:11:44.055Z	INFO	[index-management.ilm]	ilm/std.go:126	Index Alias metricbeat-7.16.2 exists already.
-2022-01-21T11:11:44.059Z	INFO	kibana/client.go:180	Kibana url: http://localhost:5601
-2022-01-21T11:11:44.062Z	ERROR	instance/beat.go:1015	Exiting: error connecting to Kibana: fail to get the Kibana version: HTTP GET request to http://localhost:5601/api/status fails: fail to execute the HTTP GET request: Get "http://localhost:5601/api/status": dial tcp [::1]:5601: connect: cannot assign requested address. Response: .
-Exiting: error connecting to Kibana: fail to get the Kibana version: HTTP GET request to http://localhost:5601/api/status fails: fail to execute the HTTP GET request: Get "http://localhost:5601/api/status": dial tcp [::1]:5601: connect: cannot assign requested address. Response: .
-
-
-
-#################################################################
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Performance Test)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] echo
+Pods count: 2
+[Pipeline] echo
+VUs: 10
+[Pipeline] echo
+Duration: 5m
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // withCredentials
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] }
+[Pipeline] // podTemplate
+[Pipeline] End of Pipeline
+Finished: SUCCESS
 
 
 
 
-## Links
 
-1. [Install Jenkins on kubernetes](https://www.jenkins.io/doc/book/installing/kubernetes/) [1b]
 
-2. [Persistent Volume for Jenkins on Kubernetes] (https://stackoverflow.com/questions/61589595/ persistent-volume-for-jenkins-on-kubernetes) [2b]
+h2. Links
 
-3. [Deploying Jenkins on Kubernetes for Scalability and Fault Tolerance] (https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513) [3b]
+# [Install Jenkins on kubernetes|https://www.jenkins.io/doc/book/installing/kubernetes/] [1b]
 
-4. [Metrics] (https://plugins.jenkins.io/metrics/) [6b]
+# [Persistent Volume for Jenkins on Kubernetes] (https://stackoverflow.com/questions/61589595/ persistent-volume-for-jenkins-on-kubernetes) [2b]
 
-5. [Monitoring Jenkins] (https://www.jenkins.io/doc/book/system-administration/monitoring/) [7b]
+# [Deploying Jenkins on Kubernetes for Scalability and Fault Tolerance] (https://faun.pub/the-ci-octopus-extremely-scalable-jenkins-master-slaves-on-kubernetes-2607704a9513) [3b]
 
-6. [Jenkins Events, Logs, and Metrics] (https://towardsdatascience.com/jenkins-events-logs-and-metrics-7c3e8b28962b) [8b]
+# [Metrics] (https://plugins.jenkins.io/metrics/) [6b]
 
-7. [Pipeline as code] (https://livebook.manning.com/book/pipeline-as-code/chapter-5/v-4/266) [9b]
+# [Monitoring Jenkins] (https://www.jenkins.io/doc/book/system-administration/monitoring/) [7b]
 
-8. [Kubernetes monitoring with prometheus]
+# [Jenkins Events, Logs, and Metrics] (https://towardsdatascience.com/jenkins-events-logs-and-metrics-7c3e8b28962b) [8b]
+
+# [Pipeline as code] (https://livebook.manning.com/book/pipeline-as-code/chapter-5/v-4/266) [9b]
+
+# [Kubernetes monitoring with prometheus]
 (https://acloudguru.com/hands-on-labs/kubernetes-monitoring-with-prometheus?utm_campaign=11244863417&utm_source=google&utm_medium=cpc&utm_content=469352928666&utm_term=_&adgroupid=115625160932&gclid=EAIaIQobChMIzqGCicX39AIVZoODBx1DfwA_EAAYASAAEgKYkfD_BwE) [4b]
 
-9. [How to Setup Prometheus Monitoring On Kubernetes Cluster]  (https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/) [5b]
+# [How to Setup Prometheus Monitoring On Kubernetes Cluster]  (https://devopscube.com/setup-prometheus-monitoring-on-kubernetes/) [5b]
 
-11. [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376) [11b]
+# [Monitoring Jenkins with Grafana and Prometheus] (https://medium.com/@eng.mohamed.m.saeed/monitoring-jenkins-with-grafana-and-prometheus-a7e037cbb376) [11b]
 
 
-12. [Monitor Jenkins Application Logs using ELK Stack] (https://souravatta.medium.com/monitor-jenkins-build-logs-using-elk-stack-697e13b78cb1 )[43b]
+# [Monitor Jenkins Application Logs using ELK Stack] (https://souravatta.medium.com/monitor-jenkins-build-logs-using-elk-stack-697e13b78cb1 )[43b]
 
-13. [Installing Logstash on Kubernetes] (https://alexander.holbreich.org/logstash-kubernetes/) [44b]
+# [Installing Logstash on Kubernetes] (https://alexander.holbreich.org/logstash-kubernetes/) [44b]
 
-14. https://github.com/elastic/beats [45b]
+# https://github.com/elastic/beats [45b]
 
-15. Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/ [46b]
+# Logging in Kubernetes with Elasticsearch, Kibana, and Fluentd https://mherman.org/blog/logging-in-kubernetes-with-elasticsearch-Kibana-fluentd/ [46b]
 
-16. Shipping Kubernetes Cluster Metrics to Elasticsearch with Metricbeat https://qbox.io/blog/shipping-kubernetes-cluster-metrics-to-elasticsearch-with-metricbeat/ [47b]
+# Shipping Kubernetes Cluster Metrics to Elasticsearch with Metricbeat https://qbox.io/blog/shipping-kubernetes-cluster-metrics-to-elasticsearch-with-metricbeat/ [47b]
 
-17. Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03 [19b]
+# Jenkins and K6 don’t go together, until now. https://medium.com/@devanshuagrawal/jenkins-and-k6-dont-go-together-until-now-d9c89227ae03 [19b]
 
-18. [k6 Prometheus Exporter] (https://github.com/benc-uk/k6-prometheus-exporter)
+# [k6 Prometheus Exporter] (https://github.com/benc-uk/k6-prometheus-exporter)
     https://github.com/grafana/xk6-output-prometheus-remote [24b]
 
-19. [Performance Test in Jenkins – Run Dynamic Pod Executors in Kubernetes Parallelly] (https://engineering.linecorp.com/en/blog/performance-test-in-jenkins-run-dynamic-pod-executors-in-kubernetes-parallelly/) [23b]
+# [Performance Test in Jenkins – Run Dynamic Pod Executors in Kubernetes Parallelly] (https://engineering.linecorp.com/en/blog/performance-test-in-jenkins-run-dynamic-pod-executors-in-kubernetes-parallelly/) [23b]
 
-20. Build your Go image https://docs.docker.com/language/golang/build-images/ [27b]
+# Build your Go image https://docs.docker.com/language/golang/build-images/ [27b]
 
-21. How To Deploy a Go Web Application with Docker. https://semaphoreci.com/community/tutorials/how-to-deploy-a-go-web-application-with-docker 
+# How To Deploy a Go Web Application with Docker. https://semaphoreci.com/community/tutorials/how-to-deploy-a-go-web-application-with-docker 
 [28b]
 
-22. Complete Guide to Create Docker Container for Your Golang Application https://levelup.gitconnected.com/complete-guide-to-create-docker-container-for-your-golang-application-80f3fb59a15e [29b]
+# Complete Guide to Create Docker Container for Your Golang Application https://levelup.gitconnected.com/complete-guide-to-create-docker-container-for-your-golang-application-80f3fb59a15e [29b]
 
-#################################################################################################################3
-
-
-19. K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins [20b]
+h113.3
 
 
-21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [22b]
+# K6-to-Junit-XML-Jenkins. https://github.com/devns98/K6-to-JUnit-XML-Jenkins [20b]
+
+
+# Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [22b]
 
 
 
-23. [k6 Prometheus Exporter] (https://github.com/benc-uk/k6-prometheus-exporter)
+# [k6 Prometheus Exporter] (https://github.com/benc-uk/k6-prometheus-exporter)
     https://github.com/grafana/xk6-output-prometheus-remote [24b]
 
-25. How to run sidecar container in jenkins pipeline running inside kubernetes https://stackoverflow.com/questions/54589786/how-to-run-sidecar-container-in-jenkins-pipeline-running-inside-kubernetes [25b]
+# How to run sidecar container in jenkins pipeline running inside kubernetes https://stackoverflow.com/questions/54589786/how-to-run-sidecar-container-in-jenkins-pipeline-running-inside-kubernetes [25b]
 
-5. Jenkinsfile Pipeline: reach ip of sidecar of host [26b]
-
-
-
-9. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906
-10. How to Setup Jenkins Build Agents on Kubernetes Pods https://devopscube.com/jenkins-build-agents-kubernetes/
-11. https://github.com/benc-uk/k6-prometheus-exporter/blob/main/deploy/example-job.yaml [30b]
+# Jenkinsfile Pipeline: reach ip of sidecar of host [26b]
 
 
-12. Kubernetes — изучаем паттерн Sidecar https://habr.com/ru/company/nixys/blog/559368/ [31b]
 
-13. Kubernetes — Learn Adapter Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-adaptor-container-pattern-97674285983c [32b]
+# Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906
+# How to Setup Jenkins Build Agents on Kubernetes Pods https://devopscube.com/jenkins-build-agents-kubernetes/
+# https://github.com/benc-uk/k6-prometheus-exporter/blob/main/deploy/example-job.yaml [30b]
 
-14. Kubernetes — Learn Sidecar Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-sidecar-container-pattern-6d8c21f873d [33b]
 
-15. Differences between Sidecar and Ambassador and Adapter pattern https://stackoverflow.com/questions/59451056/differences-between-sidecar-and-ambassador-and-adapter-pattern [34b]
+# Kubernetes — изучаем паттерн Sidecar https://habr.com/ru/company/nixys/blog/559368/ [31b]
 
-16. https://stackoverflow.com/questions/58646823/parallel-jenkins-agents-at-kubernetes-with-kubernetes-plugin [35b]
+# Kubernetes — Learn Adapter Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-adaptor-container-pattern-97674285983c [32b]
 
-17. Patterns: Sidecars, Ambassadors, and Adapters Containers https://medium.com/swlh/pattern-sidecars-ambassadors-and-adapters-containers-ec8f4140c495 [36b]
+# Kubernetes — Learn Sidecar Container Pattern https://medium.com/bb-tutorials-and-thoughts/kubernetes-learn-sidecar-container-pattern-6d8c21f873d [33b]
 
-18. How To: Kubernetes Pods as Jenkins Build Agents https://medium.com/vivid-seats-engineering/how-to-kubernetes-pods-as-jenkins-build-agents-a726d3886861 [37b]
+# Differences between Sidecar and Ambassador and Adapter pattern https://stackoverflow.com/questions/59451056/differences-between-sidecar-and-ambassador-and-adapter-pattern [34b]
 
-19. Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906 [38b]
+# https://stackoverflow.com/questions/58646823/parallel-jenkins-agents-at-kubernetes-with-kubernetes-plugin [35b]
 
-20. https://stackoverflow.com/questions/38486848/kubernetes-jenkins-plugin-slaves-always-offline [39b]
+# Patterns: Sidecars, Ambassadors, and Adapters Containers https://medium.com/swlh/pattern-sidecars-ambassadors-and-adapters-containers-ec8f4140c495 [36b]
 
-21. Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [40b]
+# How To: Kubernetes Pods as Jenkins Build Agents https://medium.com/vivid-seats-engineering/how-to-kubernetes-pods-as-jenkins-build-agents-a726d3886861 [37b]
 
-22. Client extension for interacting with Kubernetes clusters from your k6 tests. https://golangrepo.com/repo/k6io-xk6-kubernetes [41b]
+# Dynamic Jenkins Agent from Kubernetes https://itnext.io/dynamic-jenkins-agent-from-kubernetes-4adb98901906 [38b]
 
-23. https://github.com/YevhenVieskov/k6 [42b]
+# https://stackoverflow.com/questions/38486848/kubernetes-jenkins-plugin-slaves-always-offline [39b]
+
+# Detailed steps in deploying K6 on Kubernetes https://programmerall.com/article/31832021067/ [40b]
+
+# Client extension for interacting with Kubernetes clusters from your k6 tests. https://golangrepo.com/repo/k6io-xk6-kubernetes [41b]
+
+# https://github.com/YevhenVieskov/k6 [42b]
     
 
