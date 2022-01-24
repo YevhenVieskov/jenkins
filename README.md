@@ -2262,6 +2262,11 @@ To show K6 testing metrics on Grafana dashboards:
 
 ## Known issues
 
+
+**I cannot see metricbeat data in kibana.**
+**After running this command some error appeared.Why?**
+
+
 ./metricbeat setup -e -E output.logstash.enabled=false \
 > -E output.elasticsearch.hosts=['192.168.49.2:30920'] \
 > -E output.elasticsearch.username=metricbeat_internal \
@@ -2297,6 +2302,158 @@ To show K6 testing metrics on Grafana dashboards:
 2022-01-21T11:11:44.062Z	ERROR	instance/beat.go:1015	Exiting: error connecting to Kibana: fail to get the Kibana version: HTTP GET request to http://localhost:5601/api/status fails: fail to execute the HTTP GET request: Get "http://localhost:5601/api/status": dial tcp [::1]:5601: connect: cannot assign requested address. Response: .
 Exiting: error connecting to Kibana: fail to get the Kibana version: HTTP GET request to http://localhost:5601/api/status fails: fail to execute the HTTP GET request: Get "http://localhost:5601/api/status": dial tcp [::1]:5601: connect: cannot assign requested address. Response: .
 
+
+**I cannot find information about jenkins jobs in kibana jenkins index. I can find it in Elasticsearch. What's kibana settings I need change?**
+
+Elasticsearch page http://192.168.49.2:30920/ :
+
+```
+name	"elasticsearch-5fb47dc7ff-d76ht"
+cluster_name	"docker-cluster"
+cluster_uuid	"0CsyzzXIQdSiOj8Dx86TiQ"
+version	
+number	"7.16.2"
+build_flavor	"default"
+build_type	"docker"
+build_hash	"2b937c44140b6559905130a8650c64dbd0879cfb"
+build_date	"2021-12-18T19:42:46.604893745Z"
+build_snapshot	false
+lucene_version	"8.10.1"
+minimum_wire_compatibility_version	"6.8.0"
+minimum_index_compatibility_version	"6.0.0-beta1"
+tagline	"You Know, for Search"
+
+```
+
+Elasticsearch indices http://192.168.49.2:30920/_cat/indices:
+
+```
+green  open .geoip_databases                -6T3c70qQ-a8i1ZUuh5GFg 1 0    42    0  40.4mb  40.4mb
+yellow open logstash                        sjKBIOuPQbeOmC-tlWaQrA 1 1     2    0  32.4kb  32.4kb
+green  open .kibana_task_manager_7.16.2_001 w-AGG50mRN27Tx3VYocfdQ 1 0    17 3093 449.6kb 449.6kb
+green  open .apm-custom-link                Ana6OkzWQhaK3nbndJn_6w 1 0     0    0    226b    226b
+green  open .kibana_7.16.2_001              CugvV0VqT8KPulwt_XG5aA 1 0  2249  604   5.2mb   5.2mb
+green  open .apm-agent-configuration        nD_uZ8qwS1SGtH7n9yaj-g 1 0     0    0    226b    226b
+yellow open jenkins-2022.01.24              CQr-LJllSly3T6BBkvo94g 1 1 66233    0  42.8mb  42.8mb
+green  open .async-search                   U6ALq2beTMC00t-r2UMmKg 1 0   195    0  27.9kb  27.9kb
+```
+
+Logstash output http://192.168.49.2:30920/logstash/_search?pretty:
+
+timed_out	false
+_shards	
+total	1
+successful	1
+skipped	0
+failed	0
+hits	
+total	
+value	2
+relation	"eq"
+max_score	1
+hits	
+0	
+_index	"logstash"
+_type	"jenkins"
+_id	"024xi34Bh3tNpJhKoGh2"
+_score	1
+_source	
+data	
+id	"6"
+projectName	"test-logstash"
+fullProjectName	"test-logstash"
+displayName	"#6"
+fullDisplayName	"test-logstash #6"
+url	"job/test-logstash/6/"
+buildHost	"Jenkins"
+buildLabel	"master"
+stageName	"first"
+buildNum	6
+buildDuration	2092
+rootProjectName	"test-logstash"
+rootFullProjectName	"test-logstash"
+rootProjectDisplayName	"#6"
+rootBuildNum	6
+buildVariables	
+BUILD_DISPLAY_NAME	"#6"
+BUILD_ID	"6"
+BUILD_NUMBER	"6"
+BUILD_TAG	"jenkins-test-logstash-6"
+BUILD_URL	"http://192.168.49.2:30000/job/test-logstash/6/"
+CI	"true"
+CLASSPATH	""
+HUDSON_HOME	"/var/jenkins_home"
+HUDSON_SERVER_COOKIE	"132b9153a06d02b8"
+HUDSON_URL	"http://192.168.49.2:30000/"
+JENKINS_HOME	"/var/jenkins_home"
+JENKINS_SERVER_COOKIE	"132b9153a06d02b8"
+JENKINS_URL	"http://192.168.49.2:30000/"
+JOB_BASE_NAME	"test-logstash"
+JOB_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/display/redirect"
+JOB_NAME	"test-logstash"
+JOB_URL	"http://192.168.49.2:30000/job/test-logstash/"
+RUN_ARTIFACTS_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect?page=artifacts"
+RUN_CHANGES_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect?page=changes"
+RUN_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect"
+RUN_TESTS_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect?page=tests"
+message	
+0	"hello world 1"
+source	"jenkins"
+source_host	"http://192.168.49.2:30000/"
+@buildTimestamp	"2022-01-24T08:26:29.277+0000"
+@timestamp	"2022-01-24T08:26:31.576+0000"
+@version	1
+1	
+_index	"logstash"
+_type	"jenkins"
+_id	"2G4xi34Bh3tNpJhKomin"
+_score	1
+_source	
+data	
+id	"6"
+projectName	"test-logstash"
+fullProjectName	"test-logstash"
+displayName	"#6"
+fullDisplayName	"test-logstash #6"
+url	"job/test-logstash/6/"
+buildHost	"Jenkins"
+buildLabel	"master"
+stageName	"second"
+buildNum	6
+buildDuration	3707
+rootProjectName	"test-logstash"
+rootFullProjectName	"test-logstash"
+rootProjectDisplayName	"#6"
+rootBuildNum	6
+buildVariables	
+BUILD_DISPLAY_NAME	"#6"
+BUILD_ID	"6"
+BUILD_NUMBER	"6"
+BUILD_TAG	"jenkins-test-logstash-6"
+BUILD_URL	"http://192.168.49.2:30000/job/test-logstash/6/"
+CI	"true"
+CLASSPATH	""
+HUDSON_HOME	"/var/jenkins_home"
+HUDSON_SERVER_COOKIE	"132b9153a06d02b8"
+HUDSON_URL	"http://192.168.49.2:30000/"
+JENKINS_HOME	"/var/jenkins_home"
+JENKINS_SERVER_COOKIE	"132b9153a06d02b8"
+JENKINS_URL	"http://192.168.49.2:30000/"
+JOB_BASE_NAME	"test-logstash"
+JOB_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/display/redirect"
+JOB_NAME	"test-logstash"
+JOB_URL	"http://192.168.49.2:30000/job/test-logstash/"
+RUN_ARTIFACTS_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect?page=artifacts"
+RUN_CHANGES_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect?page=changes"
+RUN_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect"
+RUN_TESTS_DISPLAY_URL	"http://192.168.49.2:30000/job/test-logstash/6/display/redirect?page=tests"
+message	
+0	"hello world 2"
+source	"jenkins"
+source_host	"http://192.168.49.2:30000/"
+@buildTimestamp	"2022-01-24T08:26:29.277+0000"
+@timestamp	"2022-01-24T08:26:32.996+0000"
+@version	1
 
 
 #################################################################
