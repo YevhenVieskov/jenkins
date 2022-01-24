@@ -2263,8 +2263,11 @@ To show K6 testing metrics on Grafana dashboards:
 ## Known issues
 
 
-**I cannot see metricbeat data in kibana.**
-**After running this command some error appeared.Why?**
+**I cannot see metricbeat data in kibana and cannot create index for metricbeat, but after recreate metricbeat I can see metricbeat and create index in kibana, but I cannot work with data.**
+
+kubectl replace --force -f ./elk/metricbeat-kubernetes.yaml
+
+**After running this command some error appeared, setup is performed as in documentation.Why?**
 
 
 ./metricbeat setup -e -E output.logstash.enabled=false \
