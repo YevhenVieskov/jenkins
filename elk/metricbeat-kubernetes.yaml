@@ -8,10 +8,17 @@ metadata:
     k8s-app: metricbeat
 data:
   metricbeat.yml: |-
+    output.elasticsearch.index:"jenkins-%{+YYYY.MM.dd}" #https://www.elastic.co/guide/en/beats/metricbeat/current/change-index-name.html
+    setup.template.name: "jenkins"
+    setup.template.pattern: "jenkins-*"
     setup.dashboards.enabled: true #https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
     setup.dashboard.beat: metricbeat
-    setup.dashboard.index: jenkins-*
+    setup.dashboard.index: jenkins-*    
     setup.kibana.host: "http://192.168.49.2:30601"                  #"http://localhost:5601"
+    setup.ilm.enabled: 'true'
+    setup.ilm.pattern: '{now/d}-000001'
+    setup.ilm.policy_name: jenkins-* 
+    setup.ilm.rollover_alias: jenkins-* 
     ##############################
     metricbeat.config.modules:
       # Mounted `metricbeat-daemonset-modules` configmap:
