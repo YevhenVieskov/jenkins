@@ -2254,6 +2254,9 @@ To show K6 testing metrics on Grafana dashboards:
     Graphana dashboard for K6 (https://grafana.com/grafana/dashboards/2587) [23b]
 
 
+http://192.168.49.2:30920/_cat/indices
+
+http://192.168.49.2:30920/logstash/_search?pretty
 
 ## Kibana Jenkins monitoring with Logstash and metricbeat
 

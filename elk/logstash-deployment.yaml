@@ -94,7 +94,9 @@ data:
         password =>  "changeme"         #"elastic"
     
         action => "index"
-        index => "%{[@metadata][beat]}-%{+YYYY.MM.dd}"
+        #index => "%{[@metadata][beat]}-%{+YYYY.MM.dd}"
+        index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
+
       }
  
     # use this if you want to verify logs are being sent to elasticsearch or not
