@@ -8,11 +8,19 @@ metadata:
     k8s-app: metricbeat
 data:
   metricbeat.yml: |-
-    
+    #output.elasticsearch.index: jenkins   #jenkins-%{[beat.version]}                #https://www.elastic.co/guide/en/beats/metricbeat/current/change-index-name.html
+    #output.elasticsearch.index_pattern: -%{+yyyy.MM.dd}
+    setup.template.name: "jenkins"
+    setup.template.pattern: "jenkins-*"
     setup.dashboards.enabled: true #https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
-    setup.dashboard.beat: metricbeat      
+    setup.dashboard.beat: metricbeat
+    setup.dashboard.index: jenkins-*    
     setup.kibana.host: "http://10.107.192.244:5601"                  #"http://192.168.49.2:30601"                  
-    
+    setup.ilm.enabled: true
+    setup.ilm.overwrite: true
+    setup.ilm.pattern: '{now/d}-000001'
+    setup.ilm.policy_name: jenkins-* 
+    setup.ilm.rollover_alias: jenkins-* 
     ##############################
     metricbeat.config.modules:
       # Mounted `metricbeat-daemonset-modules` configmap:
@@ -88,7 +96,7 @@ data:
     #========================== Outputs ================================
     
     output.logstash:
-      hosts: [" 10.110.0.167:5044"]
+      hosts: ["10.103.70.207:5044"]
       bulk_max_size: 200
     
     #======================== Processors ==============================

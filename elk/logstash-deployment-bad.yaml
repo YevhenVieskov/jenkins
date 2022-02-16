@@ -88,14 +88,16 @@ data:
         hosts =>   ["10.104.144.116:9200"]               #["192.168.49.2:30920"]                                   #
     
     # username & password to connect to elaticsearch
-    # https://www.elastic.co/guide/en/beats/metricbeat/8.0/logstash-output.html
-    # https://stackoverflow.com/questions/45817487/metricbeat-to-logstash-on-a-remote-server-not-working
         user => "elastic"
         password =>  "changeme"         #"elastic"
     
+    # https://www.elastic.co/guide/en/beats/metricbeat/8.0/logstash-output.html
+    #https://stackoverflow.com/questions/45817487/metricbeat-to-logstash-on-a-remote-server-not-working
+
         action => "index"
+        #index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
         index => "%{[@metadata][beat]}-%{+YYYY.MM.dd}"
-      }
+        #index => "jenkins-%{+YYYY.MM.dd}"
  
     # use this if you want to verify logs are being sent to elasticsearch or not
  
