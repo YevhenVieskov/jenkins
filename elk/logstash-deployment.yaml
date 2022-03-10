@@ -90,12 +90,14 @@ data:
     # username & password to connect to elaticsearch
     # https://www.elastic.co/guide/en/beats/metricbeat/8.0/logstash-output.html
     # https://stackoverflow.com/questions/45817487/metricbeat-to-logstash-on-a-remote-server-not-working
+    # https://www.elastic.co/guide/en/beats/metricbeat/current/logstash-output.html
         user => "elastic"
         password =>  "changeme"         #"elastic"
     
         action => "index"
         #index => "%{[@metadata][beat]}-%{+YYYY.MM.dd}"
-        index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
+        index => "%{[@metadata][beat]}-%{[@metadata][version]}"
+        #index => "%{[@metadata][beat]}-%{[@metadata][version]}-%{+YYYY.MM.dd}"
 
       }
  

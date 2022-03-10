@@ -38,8 +38,8 @@ data:
       username: ${ELASTICSEARCH_USERNAME}
       password: ${ELASTICSEARCH_PASSWORD}
 
-    #======================== metricbeat inputs ==========================
-    metricbeat.inputs:
+    #======================== filebeat inputs ==========================
+    filebeat.inputs:
     - type: log
       enabled: true
       paths:
