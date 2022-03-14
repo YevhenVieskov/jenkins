@@ -8,6 +8,9 @@ metadata:
     k8s-app: filebeat
 data:
   filebeat.yml: |-
+    setup.dashboards.enabled: true #https://www.elastic.co/guide/en/beats/metricbeat/current/configuration-dashboards.html
+    setup.dashboard.beat: filebeat      
+    setup.kibana.host: "http://10.107.192.244:5601"    
     filebeat.inputs:
     - type: container
       paths:
